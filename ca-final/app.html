@@ -1,0 +1,720 @@
+<title>CA Final Rank Desk</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: a ledger-style study desk. Sticky header with countdown, tab rail, one working view at a time. */
+:root{
+  --bg:#f3f6f4; --surface:#ffffff; --sunk:#e8eeea; --line:#d3ddd7; --fg:#15211c; --muted:#5b6b64;
+  --accent:#0d6b55; --accent-soft:#d6ece4; --accent-fg:#ffffff;
+  --good:#1f8a4c; --warn:#b26b00; --bad:#b3261e;
+  --p1:#0d6b55; --p2:#2f5fb3; --p3:#8a4fbf; --p4:#c0562a; --p5:#b08900; --p6:#3b8c9c;
+  --h0:#e3e9e5; --h1:#b9dccd; --h2:#7fbfa5; --h3:#3c9a78; --h4:#0d6b55;
+  --display:"Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
+  --body:"IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --mono:"IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0e1412; --surface:#151d1a; --sunk:#1c2622; --line:#2a3833; --fg:#e4ece8; --muted:#93a59d;
+  --accent:#4cc39c; --accent-soft:#183a30; --accent-fg:#06150f;
+  --good:#5ccf8a; --warn:#e3a33b; --bad:#f07167;
+  --p1:#4cc39c; --p2:#7aa5f0; --p3:#c193ec; --p4:#f08a5d; --p5:#e2c04a; --p6:#6cc6d6;
+  --h0:#1c2622; --h1:#1d4436; --h2:#22684f; --h3:#2f9470; --h4:#4cc39c; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0e1412; --surface:#151d1a; --sunk:#1c2622; --line:#2a3833; --fg:#e4ece8; --muted:#93a59d;
+  --accent:#4cc39c; --accent-soft:#183a30; --accent-fg:#06150f;
+  --good:#5ccf8a; --warn:#e3a33b; --bad:#f07167;
+  --p1:#4cc39c; --p2:#7aa5f0; --p3:#c193ec; --p4:#f08a5d; --p5:#e2c04a; --p6:#6cc6d6;
+  --h0:#1c2622; --h1:#1d4436; --h2:#22684f; --h3:#2f9470; --h4:#4cc39c; color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font-family:var(--body);font-size:15px;line-height:1.5;margin:0}
+h1,h2,h3{font-family:var(--display);text-wrap:balance;margin:0;line-height:1.15}
+h2{font-size:1.45rem}
+h3{font-size:1.05rem}
+.num{font-family:var(--mono);font-variant-numeric:tabular-nums}
+.muted{color:var(--muted)}
+.small{font-size:.82rem}
+.label{font-size:.72rem;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:600}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--surface)}
+header.top{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--surface);border-bottom:1px solid var(--line)}
+.wrap{max-width:1180px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.toprow{display:flex;align-items:center;justify-content:space-between;gap:12px;padding-block:12px 8px;flex-wrap:wrap}
+.brand{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+.brand h1{font-size:1.35rem}
+.brand .tag{font-family:var(--mono);font-size:.78rem;color:var(--muted)}
+.count{display:flex;align-items:baseline;gap:8px;font-family:var(--mono)}
+.count b{font-size:1.5rem;color:var(--accent)}
+.sync{font-size:.75rem;color:var(--muted);display:flex;align-items:center;gap:6px}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--muted);display:inline-block}
+.dot.on{background:var(--good)}
+nav.tabs{display:flex;gap:2px;overflow-x:auto;scrollbar-width:none;padding-bottom:0}
+nav.tabs::-webkit-scrollbar{display:none}
+nav.tabs a{padding:8px 12px;color:var(--muted);text-decoration:none;font-weight:500;border-bottom:2px solid transparent;white-space:nowrap}
+nav.tabs a:hover{color:var(--fg)}
+nav.tabs a.on{color:var(--accent);border-bottom-color:var(--accent)}
+main{padding-block:20px 60px}
+section.view{display:grid;gap:20px}
+.grid{display:grid;gap:16px}
+.g2{grid-template-columns:repeat(auto-fit,minmax(min(100%,340px),1fr))}
+.g3{grid-template-columns:repeat(auto-fit,minmax(min(100%,250px),1fr))}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:16px;min-width:0;display:grid;gap:12px;align-content:start}
+.card.hero{border-left:4px solid var(--accent)}
+.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.between{justify-content:space-between}
+.bar{height:8px;background:var(--sunk);border-radius:99px;overflow:hidden}
+.bar i{display:block;height:100%;background:var(--accent);border-radius:99px}
+.paperline{display:grid;grid-template-columns:5.5rem 1fr 3.2rem;gap:10px;align-items:center}
+.paperline .k{font-weight:600}
+.chip{display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border-radius:99px;font-size:.78rem;font-weight:600;background:var(--sunk);color:var(--fg);border:1px solid var(--line)}
+.chip.A{background:var(--accent-soft);color:var(--accent);border-color:transparent}
+.chip.warn{color:var(--warn)}
+.chip.bad{color:var(--bad)}
+.swatch{width:10px;height:10px;border-radius:3px;display:inline-block}
+button,.btn{font:inherit;font-weight:600;font-size:.85rem;padding:7px 12px;border-radius:7px;border:1px solid var(--line);background:var(--surface);color:var(--fg);cursor:pointer}
+button:hover{border-color:var(--accent)}
+button.primary{background:var(--accent);color:var(--accent-fg);border-color:var(--accent)}
+button.ghost{border-color:transparent;background:transparent;color:var(--muted);padding:4px 8px}
+button.danger{color:var(--bad)}
+button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+input,select,textarea{font:inherit;font-size:.9rem;padding:7px 9px;border-radius:7px;border:1px solid var(--line);background:var(--bg);color:var(--fg);min-width:0}
+textarea{width:100%;font-family:var(--mono);font-size:.8rem}
+label.f{display:grid;gap:4px;font-size:.82rem;color:var(--muted);font-weight:500}
+.pills{display:flex;gap:6px;flex-wrap:wrap}
+.pills button.on{background:var(--accent);color:var(--accent-fg);border-color:var(--accent)}
+.tablewrap{overflow-x:auto;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
+table{border-collapse:collapse;width:100%;font-size:.88rem}
+th,td{padding:8px 10px;border-bottom:1px solid var(--line);text-align:left;vertical-align:middle}
+th{font-size:.7rem;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);font-weight:600;background:var(--sunk);position:sticky;top:0}
+tr:last-child td{border-bottom:none}
+td.c,th.c{text-align:center}
+.chk{width:18px;height:18px;accent-color:var(--accent);cursor:pointer}
+.conf{display:inline-flex;gap:3px}
+.conf button{width:16px;height:16px;padding:0;border-radius:50%;border:1.5px solid var(--line);background:transparent}
+.conf button.on{background:var(--accent);border-color:var(--accent)}
+.note{width:100%;font-size:.8rem}
+.ch-name{min-width:220px}
+.ch-name small{display:block;color:var(--muted);font-size:.75rem}
+.list{display:grid;gap:8px;margin:0;padding:0;list-style:none}
+.list li{display:flex;gap:10px;align-items:flex-start}
+.list li label{display:flex;gap:10px;align-items:flex-start;cursor:pointer}
+.list li.done span{color:var(--muted);text-decoration:line-through}
+.quick{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px}
+.quick .q{display:flex;align-items:center;justify-content:space-between;gap:6px;border:1px solid var(--line);border-radius:8px;padding:6px 8px}
+.quick .q b{font-family:var(--mono);font-variant-numeric:tabular-nums}
+.gantt{display:grid;gap:6px}
+.grow{display:grid;grid-template-columns:9rem 1fr;gap:10px;align-items:center}
+.gtrack{position:relative;height:26px;background:var(--sunk);border-radius:6px}
+.gseg{position:absolute;top:0;bottom:0;border-radius:6px;display:flex;align-items:center;padding:0 6px;font-size:.7rem;font-weight:600;color:#fff;overflow:hidden;white-space:nowrap}
+.gnow{position:absolute;top:-4px;bottom:-4px;width:2px;background:var(--bad)}
+.phase{border-left:3px solid var(--accent);padding-left:12px;display:grid;gap:4px}
+.phase.cur{border-left-color:var(--bad)}
+.heat{display:grid;grid-auto-flow:column;grid-template-rows:repeat(7,13px);gap:3px;overflow-x:auto;padding-bottom:4px}
+.heat i{width:13px;height:13px;border-radius:3px;background:var(--h0);display:block}
+.heat i.l1{background:var(--h1)}.heat i.l2{background:var(--h2)}.heat i.l3{background:var(--h3)}.heat i.l4{background:var(--h4)}
+.heat i.today{outline:1.5px solid var(--fg)}
+.stat{display:grid;gap:2px}
+.stat b{font-family:var(--mono);font-size:1.6rem;font-variant-numeric:tabular-nums;line-height:1.1}
+.prose{max-width:70ch;display:grid;gap:10px}
+.prose ul{margin:0;padding-left:1.2rem;display:grid;gap:6px}
+.prose p{margin:0}
+details.pw{border:1px solid var(--line);border-radius:10px;background:var(--surface);padding:12px 16px}
+details.pw summary{cursor:pointer;font-family:var(--display);font-weight:700;font-size:1.05rem}
+details.pw[open] summary{margin-bottom:10px}
+.confirm{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:10px;border:1px solid var(--bad);border-radius:8px}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(20px + env(safe-area-inset-bottom,0px));background:var(--fg);color:var(--bg);padding:8px 14px;border-radius:8px;font-size:.85rem;opacity:0;transition:opacity .2s;pointer-events:none;z-index:20}
+.toast.show{opacity:1}
+svg text{fill:var(--muted);font-family:var(--mono);font-size:10px}
+.legend{display:flex;gap:12px;flex-wrap:wrap;font-size:.8rem}
+.legend span{display:inline-flex;align-items:center;gap:5px}
+@media (max-width:560px){.paperline{grid-template-columns:4.5rem 1fr 2.8rem}.grow{grid-template-columns:5.5rem 1fr}.count b{font-size:1.25rem}}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+
+<header class="top">
+  <div class="wrap">
+    <div class="toprow">
+      <div class="brand"><h1>CA Final Rank Desk</h1><span class="tag" id="examTag"></span></div>
+      <div class="row" style="gap:16px">
+        <div class="count"><b id="daysLeft">–</b><span class="muted small">days to paper 1</span></div>
+        <span class="sync"><span class="dot" id="syncDot"></span><span id="syncText">Saved on this device</span></span>
+      </div>
+    </div>
+    <nav class="tabs" id="tabs">
+      <a href="#today" data-v="today">Today</a>
+      <a href="#syllabus" data-v="syllabus">Syllabus</a>
+      <a href="#plan" data-v="plan">Timeline</a>
+      <a href="#mocks" data-v="mocks">Mocks</a>
+      <a href="#hours" data-v="hours">Hours</a>
+      <a href="#playbook" data-v="playbook">AIR playbook</a>
+      <a href="#checklists" data-v="checklists">Checklists</a>
+      <a href="#setup" data-v="setup">Setup</a>
+    </nav>
+  </div>
+</header>
+<main class="wrap" id="main"></main>
+<div class="toast" id="toast"></div>
+
+<script>
+/* ============ DATA ============ */
+const PAPERS = [
+  {id:"fr", short:"FR", name:"Paper 1 · Financial Reporting", group:1, color:"--p1", w:1.3},
+  {id:"afm", short:"AFM", name:"Paper 2 · Advanced Financial Management", group:1, color:"--p2", w:1.0},
+  {id:"audit", short:"Audit", name:"Paper 3 · Advanced Auditing, Assurance & Professional Ethics", group:1, color:"--p3", w:0.9},
+  {id:"dt", short:"DT", name:"Paper 4 · Direct Tax Laws & International Taxation", group:2, color:"--p4", w:1.25},
+  {id:"idt", short:"IDT", name:"Paper 5 · Indirect Tax Laws (GST, Customs & FTP)", group:2, color:"--p5", w:1.0},
+  {id:"ibs", short:"IBS", name:"Paper 6 · Integrated Business Solutions (case study)", group:2, color:"--p6", w:0.6},
+];
+// [name, priority A/B/C, hint]
+const CH = {
+fr:[
+ ["Ind AS 115 · Revenue from Contracts with Customers","A","5-step model, variable consideration, principal vs agent"],
+ ["Ind AS 109 / 32 / 107 · Financial Instruments","A","Classification, ECL, EIR, compound instruments, derecognition"],
+ ["Ind AS 103 · Business Combinations (incl. common control)","A","Acquisition method, goodwill / bargain purchase, Appendix C"],
+ ["Ind AS 110 / 111 / 27 / 28 / 112 · Consolidation & Group Accounts","A","CFS, NCI, step acquisition, JA, equity method"],
+ ["Ind AS 116 · Leases","A","Lessee ROU, modifications, sale & leaseback"],
+ ["Ind AS 102 · Share-based Payment","A","Equity vs cash settled, modifications, group plans"],
+ ["Ind AS 36 · Impairment of Assets","A","CGU, recoverable amount, goodwill allocation"],
+ ["Ind AS 1, 34, 7 · Presentation, Interim, Cash Flows","B","Schedule III Div II, interim measurement"],
+ ["Ind AS 8, 10, 113 · Policies, Events after RP, Fair Value","B","Errors vs estimates, adjusting events, FV hierarchy"],
+ ["Ind AS 16, 23, 40, 105 · PPE, Borrowing Costs, Inv. Property, Held for Sale","B",""],
+ ["Ind AS 2 & 38 · Inventories, Intangibles","B",""],
+ ["Ind AS 12 · Income Taxes","B","Temporary differences, DTA recognition"],
+ ["Ind AS 19 · Employee Benefits","B","Defined benefit, OCI remeasurement"],
+ ["Ind AS 37 · Provisions & Contingencies","B","Onerous contracts, restructuring"],
+ ["Ind AS 21 · Foreign Exchange","B","Functional currency, translation of foreign ops"],
+ ["Ind AS 24, 33, 108 · Related Parties, EPS, Segments","B","Diluted EPS is a scoring area"],
+ ["Ind AS 20 & 41 · Govt Grants, Agriculture","C",""],
+ ["Ind AS 101 · First-time Adoption","B","Mandatory exceptions, optional exemptions"],
+ ["Conceptual Framework & Introduction to Ind AS","C",""],
+ ["Analysis of Financial Statements (integrated questions)","B","Error-spotting case questions"],
+ ["Professional & Ethical Duty; Accounting & Technology","C",""],
+],
+afm:[
+ ["Derivatives Analysis & Valuation","A","Futures, options, Black-Scholes, binomial, swaps"],
+ ["Foreign Exchange Exposure & Risk Management","A","Forward cover, money market hedge, IRP / PPP"],
+ ["Portfolio Management","A","CAPM, beta, Sharpe / Treynor, APT, efficient frontier"],
+ ["Security Valuation","A","Bond YTM, duration, equity valuation, convertibles"],
+ ["Business Valuation","A","DCF, EVA, relative valuation"],
+ ["Mergers, Acquisitions & Corporate Restructuring","A","Swap ratio, synergy, buy-back"],
+ ["Mutual Funds","B","NAV, returns, expense ratio"],
+ ["Risk Management","B","VaR, risk types"],
+ ["Advanced Capital Budgeting Decisions","B","Risk-adjusted NPV, real options"],
+ ["Security Analysis","B","Fundamental & technical analysis"],
+ ["International Financial Management","B","International capital budgeting, ADR / GDR"],
+ ["Interest Rate Risk Management","B","FRA, IRF, caps & floors"],
+ ["Securitization","C",""],
+ ["Startup Finance","C","Theory, pitch deck, funding stages"],
+ ["Financial Policy & Corporate Strategy","C","Theory"],
+],
+audit:[
+ ["Quality Management (SQC 1 / SQM 1 & 2, SA 220)","A",""],
+ ["General Auditing Principles & Auditor's Responsibilities (SA 200 series)","A","SA 200, 210, 230, 240, 250, 260, 265, 299"],
+ ["Audit Planning, Strategy & Execution (SA 300, 315, 320, 330, 450)","A",""],
+ ["Audit Evidence (SA 500 series)","A","SA 501, 505, 520, 530, 540, 550"],
+ ["Completion & Review (SA 560, 570, 580)","A","Going concern is a favourite"],
+ ["Reporting (SA 700 series) & CARO","A","Modified opinions, KAM, EOM / OM paragraphs"],
+ ["Specialised Areas (SA 600, 610, 620, 800 series)","B",""],
+ ["Related Services (SRS 4400, 4410)","B",""],
+ ["Review of Financial Information (SRE 2400, 2410)","B",""],
+ ["Prospective Financial Info & Other Assurance (SAE 3400, 3402, 3420)","B",""],
+ ["Digital Auditing & Assurance","B","IT controls, data analytics, CAAT"],
+ ["Group Audits","B",""],
+ ["Audit of Banks & NBFCs","B","LFAR, NPA norms, income recognition"],
+ ["Audit of Public Sector Undertakings","C",""],
+ ["Internal Audit","B","SIA framework"],
+ ["Due Diligence, Investigation & Forensic Accounting","B",""],
+ ["Emerging Areas (sustainability, BRSR)","C",""],
+ ["Professional Ethics & Liabilities of Auditors (CA Act, Code of Ethics)","A","Schedules I & II: write the clause"],
+],
+dt:[
+ ["Basic Concepts, Residence & Scope of Total Income","B",""],
+ ["Incomes not forming part of Total Income","B","Including tax holidays"],
+ ["Profits & Gains of Business or Profession","A","Deductions, disallowances, presumptive tax"],
+ ["Capital Gains","A","Special provisions, exemptions, business reorganisation"],
+ ["Income from Other Sources","B",""],
+ ["Clubbing, Set-off & Carry Forward of Losses","B",""],
+ ["Deductions from Gross Total Income","B",""],
+ ["Assessment of Business Entities (firms, LLP, companies, MAT / AMT)","A","Including new regime provisions"],
+ ["Assessment of Trusts & Institutions","B",""],
+ ["Taxation of Digital Transactions","C",""],
+ ["Deduction, Collection & Recovery of Tax (TDS / TCS)","A","High frequency; know rates and thresholds"],
+ ["Income Computation & Disclosure Standards (ICDS)","C",""],
+ ["Assessment Procedure, Appeals & Revision","B",""],
+ ["Dispute Resolution, Penalties, Offences & Prosecution","B",""],
+ ["Liability in Special Cases & Miscellaneous","C",""],
+ ["Non-resident Taxation","A",""],
+ ["Double Taxation Relief","B",""],
+ ["Advance Rulings","C",""],
+ ["Transfer Pricing","A","Methods, safe harbour, APAs, secondary adjustment"],
+ ["Equalisation Levy","C",""],
+ ["Model Tax Conventions & Interpretation of Tax Treaties","B",""],
+ ["Fundamentals of BEPS & Latest Developments","B",""],
+],
+idt:[
+ ["Supply under GST (incl. composite / mixed supply)","A",""],
+ ["Charge of GST (RCM, ECO)","A",""],
+ ["Exemptions from GST","A","Long list: revise often"],
+ ["Place of Supply","A",""],
+ ["Time of Supply","B",""],
+ ["Value of Supply","A",""],
+ ["Input Tax Credit","A","Blocked credits, apportionment, reversal"],
+ ["Registration","B",""],
+ ["Tax Invoice, Credit & Debit Notes, E-way Bill","B",""],
+ ["Accounts & Records; Payment of Tax; Returns","B",""],
+ ["Import & Export under GST; Refunds","A",""],
+ ["Job Work; Assessment & Audit","B",""],
+ ["Inspection, Search, Seizure & Arrest","B",""],
+ ["Demands & Recovery; Liability in Certain Cases","B",""],
+ ["Offences & Penalties; Appeals & Revision; Advance Ruling","B",""],
+ ["Levy of & Exemptions from Customs Duty; Types of Duty","A",""],
+ ["Classification of Imported & Export Goods","B",""],
+ ["Valuation under Customs","A",""],
+ ["Importation, Exportation & Transportation; Warehousing","B",""],
+ ["Refund under Customs","C",""],
+ ["Foreign Trade Policy","B",""],
+],
+ibs:[
+ ["Case-study approach: reading, mapping issues, answer format","A","Practise structured answers under time"],
+ ["FR concepts applied in cases","A",""],
+ ["AFM concepts applied in cases","B",""],
+ ["Audit & Ethics applied in cases","A",""],
+ ["DT & IDT applied in cases","B",""],
+ ["Corporate & Economic Laws (SPOM Set A) in cases","B",""],
+ ["Strategic Cost & Performance Management (SPOM Set B) in cases","B",""],
+ ["ICAI case-study compilation: first pass","A",""],
+ ["ICAI case-study compilation: second pass, timed","A",""],
+ ["RTP / MTP case studies","A",""],
+ ["Past exam case studies","A",""],
+],
+};
+const STAGES = [["r","Read",.40],["r1","Rev 1",.20],["r2","Rev 2",.15],["r3","Rev 3",.10],["q","Qs",.15]];
+
+/* ============ STATE ============ */
+const LS = "caFinalRankDesk.v1";
+const todayISO = () => iso(new Date());
+function iso(d){return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0")}
+function parse(s){const [y,m,d]=s.split("-").map(Number);return new Date(y,m-1,d)}
+function addDays(d,n){const x=new Date(d);x.setDate(x.getDate()+n);return x}
+function diffDays(a,b){return Math.round((parse(iso(b))-parse(iso(a)))/864e5)}
+function fmt(s){const d=typeof s==="string"?parse(s):s;return d.toLocaleDateString("en-IN",{day:"numeric",month:"short",year:"numeric"})}
+function fmtShort(d){return d.toLocaleDateString("en-IN",{day:"numeric",month:"short"})}
+function esc(s){return String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
+
+function freshState(){
+  return {v:1, updatedAt:0,
+    settings:{examDate:"2027-05-01", startDate:todayISO(), groups:"both", target:10, revDays:21, targetPct:75},
+    ch:{}, log:{}, mocks:[], checks:{}, todos:{}};
+}
+let S = freshState();
+try{const raw=localStorage.getItem(LS); if(raw){S=Object.assign(freshState(),JSON.parse(raw));}}catch(e){}
+
+let dbRef=null, writing=false, dirty=false, lastSent="", saveTimer=null;
+function save(){
+  S.updatedAt=Date.now();
+  try{localStorage.setItem(LS,JSON.stringify(S))}catch(e){}
+  if(dbRef){dirty=true;clearTimeout(saveTimer);saveTimer=setTimeout(flush,1200)}
+}
+async function flush(){
+  if(!dbRef||writing||!dirty) return;
+  writing=true; dirty=false;
+  const s=JSON.stringify(S); lastSent=s;
+  try{await dbRef.set({s, t:S.updatedAt}); setSync(true,"Synced to your account")}
+  catch(e){setSync(false,"Sync failed, saved on this device")}
+  writing=false; if(dirty) flush();
+}
+function setSync(on,txt){document.getElementById("syncDot").classList.toggle("on",on);document.getElementById("syncText").textContent=txt}
+
+async function initSync(){
+  if(!window.claude||!window.claude.use) return;
+  try{
+    const [db,user]=await Promise.all([claude.use("db"),claude.use("user")]);
+    if(!db||!user) return;
+    const id=await user.id(); if(!id) return;
+    dbRef=db.collection("data/users/"+id).doc("state");
+    const snap=await dbRef.get();
+    if(snap.exists){
+      const d=snap.data();
+      if(d && d.s && (d.t||0)>=(S.updatedAt||0)){ S=Object.assign(freshState(),JSON.parse(d.s)); try{localStorage.setItem(LS,d.s)}catch(e){} render(); }
+      else { dirty=true; flush(); }
+    } else if(S.updatedAt){ dirty=true; flush(); }
+    setSync(true,"Synced to your account");
+    dbRef.onSnapshot(sn=>{
+      if(!sn.exists) return; const d=sn.data(); if(!d||!d.s||d.s===lastSent) return;
+      if((d.t||0)>(S.updatedAt||0)){ S=Object.assign(freshState(),JSON.parse(d.s)); lastSent=d.s; try{localStorage.setItem(LS,d.s)}catch(e){} render(); }
+    },()=>setSync(false,"Offline, saved on this device"));
+  }catch(e){ dbRef=null; }
+}
+
+/* ============ DERIVED ============ */
+function activePapers(){const g=S.settings.groups;return PAPERS.filter(p=>g==="both"||String(p.group)===g)}
+function chKey(p,i){return p+"-"+i}
+function chState(p,i){return S.ch[chKey(p,i)]||{}}
+function chProgress(c){return STAGES.reduce((a,[k,,w])=>a+(c[k]?w:0),0)}
+function paperProgress(pid){const list=CH[pid];return list.reduce((a,_,i)=>a+chProgress(chState(pid,i)),0)/list.length}
+function overall(){const ps=activePapers();return ps.reduce((a,p)=>a+paperProgress(p.id),0)/ps.length}
+function hoursOn(day){const l=S.log[day]||{};return Object.values(l).reduce((a,b)=>a+(+b||0),0)}
+function streak(){let n=0,d=new Date();if(hoursOn(iso(d))===0)d=addDays(d,-1);while(hoursOn(iso(d))>0){n++;d=addDays(d,-1)}return n}
+function paperOf(id){return PAPERS.find(p=>p.id===id)}
+function col(p){return `var(${paperOf(p).color})`}
+
+/* Timeline generator */
+function buildPlan(){
+  const st=S.settings, start=parse(st.startDate), exam=parse(st.examDate);
+  const D=Math.max(diffDays(start,exam),1), ps=activePapers().map(p=>p.id);
+  const phases=[]; let cur=start;
+  const push=(name,days,desc,blocks)=>{if(days<=0)return;const end=addDays(cur,days);phases.push({name,start:cur,end,desc,blocks:blocks(cur,days)});cur=end};
+  const split=(from,days,items)=>{const tw=items.reduce((a,b)=>a+b.w,0);let c=from,out=[];items.forEach((it,i)=>{let len=i===items.length-1?diffDays(c,addDays(from,days)):Math.max(1,Math.round(days*it.w/tw));const e=addDays(c,len);out.push({papers:it.papers,label:it.label,start:c,end:e});c=e});return out};
+  let p4=Math.min(Math.max(21,Math.round(D*.12)),45); if(p4>D*.5)p4=Math.round(D*.5);
+  const R=D-p4; let p1=D>=110?Math.round(R*.6):0; let p2=Math.round((R-p1)*(p1?.58:.6)); let p3=R-p1-p2;
+  const g=st.groups;
+  const firstBlocks = g==="1"?[{papers:["fr","audit"],w:1.4,label:"FR + Audit"},{papers:["afm","audit"],w:1,label:"AFM + Audit"}]
+    : g==="2"?[{papers:["dt","ibs"],w:1.3,label:"DT + IBS cases"},{papers:["idt","ibs"],w:1,label:"IDT + IBS cases"}]
+    : [{papers:["fr","audit"],w:1.3,label:"FR + Audit"},{papers:["dt","afm"],w:1.25,label:"DT + AFM"},{papers:["idt","ibs"],w:1,label:"IDT + IBS"}];
+  push("Phase 1 · Concepts & first reading",p1,"One numerical paper paired with one theory paper. Finish ICAI study material, make your own summary notes, solve illustrations and test-your-knowledge questions. Tick Read and Qs for each chapter.",(f,d)=>split(f,d,firstBlocks));
+  push("Phase 2 · Revision 1 + question practice",p2,"Paper by paper. Revise from your notes, solve every past-paper question and RTP question for each chapter, and log weak chapters (confidence 1–2).",(f,d)=>split(f,d,ps.map(id=>({papers:[id],w:paperOf(id).w,label:paperOf(id).short}))));
+  push("Phase 3 · Revision 2 + mock cycle",p3,"Faster revision with full 3-hour papers. Write at least one full mock per paper per cycle under exam conditions, check against ICAI suggested answers, and fix presentation.",(f,d)=>split(f,d,ps.map(id=>({papers:[id],w:paperOf(id).w,label:paperOf(id).short}))));
+  push("Phase 4 · Final revision (exam mode)",p4,"Revision 3 from notes only. Amendments, MTP / RTP, formula sheets, and SA / section lists. Sleep and timing match the exam: 2 pm to 5 pm.",(f,d)=>split(f,d,ps.map(id=>({papers:[id],w:paperOf(id).w,label:paperOf(id).short}))));
+  return {phases,start,exam,D};
+}
+function currentBlock(plan){const t=parse(todayISO());for(const ph of plan.phases)for(const b of ph.blocks)if(t>=b.start&&t<b.end)return {ph,b};return null}
+
+/* ============ VIEWS ============ */
+const V={};
+V.today=()=>{
+  const plan=buildPlan(), cb=currentBlock(plan), t=todayISO(), hrs=hoursOn(t), tgt=+S.settings.target||8;
+  const due=[];activePapers().forEach(p=>CH[p.id].forEach((c,i)=>{const s=chState(p.id,i);if(s.r&&s.last&&diffDays(parse(s.last),new Date())>=+S.settings.revDays)due.push({p,c,i,s,age:diffDays(parse(s.last),new Date())});else if(s.r&&s.conf&&s.conf<=2)due.push({p,c,i,s,age:s.last?diffDays(parse(s.last),new Date()):0,weak:true})}));
+  due.sort((a,b)=>b.age-a.age);
+  const todos=S.todos[t]||[];
+  const daysLeft=diffDays(new Date(),parse(S.settings.examDate));
+  return `
+  <div class="grid g2">
+    <div class="card hero">
+      <div class="label">Where you are</div>
+      ${cb?`<h2>${esc(cb.ph.name)}</h2><p class="muted" style="margin:0">Focus block: <b style="color:var(--fg)">${esc(cb.b.label)}</b>, ${fmtShort(cb.b.start)} to ${fmtShort(addDays(cb.b.end,-1))} (${diffDays(new Date(),cb.b.end)} days left in block)</p><p class="small muted" style="margin:0">${esc(cb.ph.desc)}</p>`
+        :daysLeft<0?`<h2>Exam date has passed</h2><p class="muted">Set your next attempt in Setup.</p>`:`<h2>Your plan starts ${fmt(S.settings.startDate)}</h2>`}
+      <div class="row" style="gap:24px">
+        <div class="stat"><span class="label">Syllabus done</span><b>${Math.round(overall()*100)}%</b></div>
+        <div class="stat"><span class="label">Streak</span><b>${streak()}<span class="small muted"> days</span></b></div>
+        <div class="stat"><span class="label">Weeks left</span><b>${Math.max(0,Math.floor(daysLeft/7))}</b></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="row between"><div class="label">Hours today</div><span class="num">${hrs.toFixed(1)} / ${tgt} h</span></div>
+      <div class="bar"><i style="width:${Math.min(100,hrs/tgt*100)}%"></i></div>
+      <div class="quick">${activePapers().map(p=>`<div class="q"><span class="row" style="gap:6px"><span class="swatch" style="background:${col(p.id)}"></span>${p.short}</span><span class="row" style="gap:2px"><button class="ghost" data-act="hr" data-p="${p.id}" data-d="-0.5" aria-label="Remove half hour ${p.short}">−</button><b>${((S.log[t]||{})[p.id]||0).toFixed(1)}</b><button class="ghost" data-act="hr" data-p="${p.id}" data-d="0.5" aria-label="Add half hour ${p.short}">+</button></span></div>`).join("")}</div>
+      <p class="small muted" style="margin:0">Tap + for every 30 minutes of focused study.</p>
+    </div>
+  </div>
+  <div class="grid g2">
+    <div class="card">
+      <div class="label">Paper progress</div>
+      ${activePapers().map(p=>{const v=paperProgress(p.id);return `<div class="paperline"><span class="k">${p.short}</span><div class="bar"><i style="width:${v*100}%;background:${col(p.id)}"></i></div><span class="num small">${Math.round(v*100)}%</span></div>`}).join("")}
+      <p class="small muted" style="margin:0">Weighting: read 40%, revisions 20 / 15 / 10%, questions 15%.</p>
+    </div>
+    <div class="card">
+      <div class="row between"><div class="label">Today's tasks</div><span class="small muted">${todos.filter(x=>x.done).length}/${todos.length}</span></div>
+      <ul class="list">${todos.map((x,i)=>`<li class="${x.done?"done":""}"><label><input type="checkbox" class="chk" data-act="todo" data-i="${i}" ${x.done?"checked":""}><span>${esc(x.t)}</span></label><button class="ghost" data-act="deltodo" data-i="${i}" aria-label="Delete task">×</button></li>`).join("")||`<li class="muted small">No tasks yet. Add 3–5 concrete ones, such as “Ind AS 116: 6 PYQs”.</li>`}</ul>
+      <form class="row" id="todoForm"><input id="todoIn" placeholder="Add a task for today" style="flex:1"><button class="primary">Add</button></form>
+    </div>
+  </div>
+  <div class="card">
+    <div class="row between"><div class="label">Due for revision</div><span class="small muted">Read but untouched for ${S.settings.revDays}+ days, or confidence 1–2</span></div>
+    ${due.length?`<div class="tablewrap"><table><tr><th>Paper</th><th>Chapter</th><th>Last touched</th><th class="c">Mark revised</th></tr>${due.slice(0,12).map(d=>`<tr><td><span class="chip"><span class="swatch" style="background:${col(d.p.id)}"></span>${d.p.short}</span></td><td>${esc(d.c[0])} ${d.weak?'<span class="chip bad">weak</span>':""}</td><td class="num small">${d.s.last?d.age+" days ago":"–"}</td><td class="c"><button data-act="touch" data-k="${chKey(d.p.id,d.i)}">Revised today</button></td></tr>`).join("")}</table></div>`:`<p class="muted small" style="margin:0">Nothing due. Chapters appear here once you tick Read and time passes, so nothing slips out of memory before the exam.</p>`}
+  </div>`;
+};
+
+let curPaper="fr", chFilter="all";
+V.syllabus=()=>{
+  if(!activePapers().some(p=>p.id===curPaper)) curPaper=activePapers()[0].id;
+  const p=paperOf(curPaper), list=CH[curPaper];
+  const rows=list.map((c,i)=>({c,i,s:chState(curPaper,i)})).filter(r=>chFilter==="all"||(chFilter==="weak"&&r.s.conf&&r.s.conf<=2)||(chFilter==="todo"&&!r.s.r)||(chFilter==="A"&&r.c[1]==="A"));
+  return `
+  <div class="row between">
+    <div class="pills" role="tablist">${activePapers().map(x=>`<button class="${x.id===curPaper?"on":""}" data-act="paper" data-p="${x.id}">${x.short} <span class="num small">${Math.round(paperProgress(x.id)*100)}%</span></button>`).join("")}</div>
+    <div class="pills">${[["all","All"],["A","Priority A"],["todo","Not read"],["weak","Weak"]].map(([k,l])=>`<button class="${chFilter===k?"on":""}" data-act="filter" data-f="${k}">${l}</button>`).join("")}</div>
+  </div>
+  <div class="row between"><h2>${esc(p.name)}</h2><span class="small muted">${list.filter((_,i)=>chState(curPaper,i).r).length} of ${list.length} chapters read</span></div>
+  <div class="tablewrap"><table>
+    <tr><th>Chapter</th><th class="c">Pri.</th>${STAGES.map(s=>`<th class="c">${s[1]}</th>`).join("")}<th class="c">Confidence</th><th>Last</th><th>Notes</th></tr>
+    ${rows.map(({c,i,s})=>{const k=chKey(curPaper,i);return `<tr>
+      <td class="ch-name">${esc(c[0])}${c[2]?`<small>${esc(c[2])}</small>`:""}</td>
+      <td class="c"><span class="chip ${c[1]}">${c[1]}</span></td>
+      ${STAGES.map(([st,l])=>`<td class="c"><input type="checkbox" class="chk" aria-label="${l}: ${esc(c[0])}" data-act="stage" data-k="${k}" data-s="${st}" ${s[st]?"checked":""}></td>`).join("")}
+      <td class="c"><span class="conf">${[1,2,3,4,5].map(n=>`<button aria-label="Confidence ${n}" class="${(s.conf||0)>=n?"on":""}" data-act="conf" data-k="${k}" data-n="${n}"></button>`).join("")}</span></td>
+      <td class="num small muted">${s.last?fmtShort(parse(s.last)):"–"}</td>
+      <td><input class="note" id="note-${k}" data-act="note" data-k="${k}" value="${esc(s.note||"")}" placeholder="weak spots, Q numbers…"></td></tr>`}).join("")||`<tr><td colspan="10" class="muted">No chapters match this filter.</td></tr>`}
+  </table></div>
+  <p class="small muted" style="margin:0">Priority A/B/C reflects how often a topic is commonly examined. Check it against ICAI's study material, RTPs and recent papers for your attempt. Ticking any box sets “Last” to today.</p>`;
+};
+
+V.plan=()=>{
+  const plan=buildPlan(), total=plan.D, t=new Date(), nowPct=Math.min(100,Math.max(0,diffDays(plan.start,t)/total*100));
+  const rows=[];
+  plan.phases.forEach(ph=>{rows.push(`<div class="grow"><span class="small" style="font-weight:600">${esc(ph.name.split(" · ")[0])}</span><div class="gtrack">${ph.blocks.map(b=>{const l=diffDays(plan.start,b.start)/total*100,w=diffDays(b.start,b.end)/total*100;return `<div class="gseg" title="${esc(b.label)}: ${fmtShort(b.start)} to ${fmtShort(addDays(b.end,-1))}" style="left:${l}%;width:${w}%;background:${col(b.papers[0])}">${esc(b.label)}</div>`}).join("")}<div class="gnow" style="left:${nowPct}%"></div></div></div>`)});
+  const E=plan.exam, ms=[
+    [addDays(E,-100),"Exam notification and form window usually opens around here. Fill the form early and check articleship, AICITSS and SPOM eligibility."],
+    [addDays(E,-75),"RTP (Revision Test Papers) usually released. Solve every question, with amendments."],
+    [addDays(E,-60),"MTP Series I usually released. Attempt each paper as a full 3-hour test."],
+    [addDays(E,-35),"MTP Series II usually released. Second full mock round."],
+    [addDays(E,-21),"Final revision starts. No new topics from here."],
+    [addDays(E,-14),"Admit card usually available. Download it and check your photo, signature and centre."],
+    [E,"Paper 1 (exam day). Group I and Group II run on alternate days, with gaps for revision."],
+  ];
+  return `
+  <div class="row between"><h2>Your timeline</h2><span class="small muted num">${fmt(S.settings.startDate)} to ${fmt(S.settings.examDate)} · ${total} days</span></div>
+  <div class="card"><div class="gantt">${rows.join("")}</div><div class="legend">${activePapers().map(p=>`<span><span class="swatch" style="background:${col(p.id)}"></span>${p.short}</span>`).join("")}<span><span class="swatch" style="background:var(--bad)"></span>Today</span></div></div>
+  <div class="grid g2">
+    <div class="card"><div class="label">Phases</div>
+      ${plan.phases.map(ph=>{const isCur=t>=ph.start&&t<ph.end;return `<div class="phase ${isCur?"cur":""}"><h3>${esc(ph.name)} ${isCur?'<span class="chip bad">now</span>':""}</h3><span class="num small muted">${fmtShort(ph.start)} to ${fmtShort(addDays(ph.end,-1))} · ${diffDays(ph.start,ph.end)} days</span><p class="small" style="margin:0">${esc(ph.desc)}</p><div class="row small">${ph.blocks.map(b=>`<span class="chip"><span class="swatch" style="background:${col(b.papers[0])}"></span>${esc(b.label)} · ${diffDays(b.start,b.end)}d</span>`).join("")}</div></div>`}).join("")||`<p class="muted">Set a start date before your exam date in Setup.</p>`}
+    </div>
+    <div class="card"><div class="label">Key milestones (estimated)</div>
+      <div class="tablewrap"><table>${ms.map(([d,txt])=>`<tr><td class="num small" style="white-space:nowrap">${fmtShort(d)}</td><td class="small">${txt} ${d<t?'<span class="chip">past</span>':""}</td></tr>`).join("")}</table></div>
+      <p class="small muted" style="margin:0">Dates are estimated from your exam date using ICAI's usual pattern. Confirm the real dates on icai.org and in BoS announcements.</p>
+    </div>
+  </div>`;
+};
+
+let mockForm={paper:"fr"};
+V.mocks=()=>{
+  const ps=activePapers(), tp=+S.settings.targetPct||75;
+  const stats=ps.map(p=>{const m=S.mocks.filter(x=>x.paper===p.id).sort((a,b)=>a.date<b.date?-1:1);const pct=m.map(x=>x.score/x.max*100);return {p,m,avg:pct.length?pct.reduce((a,b)=>a+b,0)/pct.length:null,best:pct.length?Math.max(...pct):null,last:pct.length?pct[pct.length-1]:null}});
+  const W=640,H=220,pad=32; const all=[...S.mocks].sort((a,b)=>a.date<b.date?-1:1);
+  let chart=`<p class="muted small" style="margin:0">Add a mock score to see your trend against the target line.</p>`;
+  if(all.length){const d0=parse(all[0].date),d1=parse(all[all.length-1].date),span=Math.max(1,diffDays(d0,d1));const x=d=>pad+diffDays(d0,parse(d))/span*(W-pad*2),y=v=>H-pad-(v/100)*(H-pad*1.6);
+    chart=`<div style="overflow-x:auto"><svg viewBox="0 0 ${W} ${H}" width="100%" style="min-width:420px" role="img" aria-label="Mock score trend">
+      ${[0,40,60,80,100].map(v=>`<line x1="${pad}" x2="${W-pad/2}" y1="${y(v)}" y2="${y(v)}" stroke="var(--line)" stroke-width="1"/><text x="${pad-6}" y="${y(v)+3}" text-anchor="end">${v}</text>`).join("")}
+      <line x1="${pad}" x2="${W-pad/2}" y1="${y(tp)}" y2="${y(tp)}" stroke="var(--bad)" stroke-dasharray="4 4" stroke-width="1.5"/><text x="${W-pad/2}" y="${y(tp)-5}" text-anchor="end" style="fill:var(--bad)">target ${tp}%</text>
+      ${stats.map(s=>{if(!s.m.length)return"";const pts=s.m.map(m=>`${x(m.date)},${y(m.score/m.max*100)}`).join(" ");return `<polyline points="${pts}" fill="none" stroke="${col(s.p.id)}" stroke-width="2"/>${s.m.map(m=>`<circle cx="${x(m.date)}" cy="${y(m.score/m.max*100)}" r="3.5" fill="${col(s.p.id)}"/>`).join("")}`}).join("")}
+      <text x="${pad}" y="${H-8}">${fmtShort(d0)}</text><text x="${W-pad/2}" y="${H-8}" text-anchor="end">${fmtShort(d1)}</text>
+    </svg></div><div class="legend">${ps.map(p=>`<span><span class="swatch" style="background:${col(p.id)}"></span>${p.short}</span>`).join("")}</div>`}
+  const grp=g=>{const s=stats.filter(x=>x.p.group===g&&x.last!=null);if(!s.length)return null;const tot=s.reduce((a,b)=>a+b.last,0);return {n:s.length,agg:tot/s.length,min:Math.min(...s.map(x=>x.last))}};
+  const groupCard=g=>{const r=grp(g);if(!r)return"";const pass=r.min>=40&&r.agg>=50;return `<div class="stat"><span class="label">Group ${g===1?"I":"II"} (latest)</span><b>${r.agg.toFixed(1)}%</b><span class="small ${pass?"":"muted"}" style="color:${pass?"var(--good)":"var(--bad)"}">${pass?"Pass pace":"Below pass rule"} · lowest ${r.min.toFixed(0)}</span></div>`};
+  return `
+  <div class="row between"><h2>Mock tests</h2><span class="small muted">Target for a rank: ${tp}%+ in every paper</span></div>
+  <div class="grid g2">
+    <div class="card"><div class="label">Trend</div>${chart}</div>
+    <div class="card"><div class="label">Add a score</div>
+      <form id="mockForm" class="grid" style="grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px">
+        <label class="f">Paper<select id="mPaper">${ps.map(p=>`<option value="${p.id}" ${mockForm.paper===p.id?"selected":""}>${p.short}</option>`).join("")}</select></label>
+        <label class="f">Date<input type="date" id="mDate" value="${todayISO()}"></label>
+        <label class="f">Marks<input type="number" id="mScore" min="0" max="100" step="0.5" placeholder="62" required></label>
+        <label class="f">Out of<input type="number" id="mMax" value="100" min="1"></label>
+        <label class="f" style="grid-column:1/-1">Source<input id="mSrc" placeholder="ICAI MTP Series I, coaching test series, PYQ May 2025…"></label>
+        <button class="primary" style="grid-column:1/-1">Save score</button>
+      </form>
+      <div class="row" style="gap:24px">${groupCard(1)}${groupCard(2)}</div>
+      <p class="small muted" style="margin:0">ICAI pass rule: at least 40 in each paper and 50% aggregate per group. 60+ in a paper earns an exemption.</p>
+    </div>
+  </div>
+  <div class="tablewrap"><table><tr><th>Paper</th><th class="c">Mocks</th><th class="c">Average</th><th class="c">Best</th><th class="c">Latest</th><th class="c">Gap to target</th></tr>
+    ${stats.map(s=>`<tr><td><span class="row" style="gap:6px"><span class="swatch" style="background:${col(s.p.id)}"></span>${s.p.short}</span></td><td class="c num">${s.m.length}</td><td class="c num">${s.avg==null?"–":s.avg.toFixed(1)}</td><td class="c num">${s.best==null?"–":s.best.toFixed(1)}</td><td class="c num">${s.last==null?"–":s.last.toFixed(1)}</td><td class="c num" style="color:${s.last==null?"inherit":s.last>=tp?"var(--good)":"var(--warn)"}">${s.last==null?"–":(s.last>=tp?"on target":"−"+(tp-s.last).toFixed(1))}</td></tr>`).join("")}
+  </table></div>
+  ${S.mocks.length?`<div class="tablewrap"><table><tr><th>Date</th><th>Paper</th><th class="c">Score</th><th>Source</th><th></th></tr>${[...S.mocks].sort((a,b)=>a.date<b.date?1:-1).map(m=>`<tr><td class="num small">${fmt(m.date)}</td><td>${paperOf(m.paper).short}</td><td class="c num">${m.score}/${m.max}</td><td class="small">${esc(m.src||"")}</td><td><button class="ghost" data-act="delmock" data-id="${m.id}" aria-label="Delete mock">×</button></td></tr>`).join("")}</table></div>`:""}`;
+};
+
+V.hours=()=>{
+  const weeks=18, t=new Date(), end=addDays(t,6-((t.getDay()+6)%7)), start=addDays(end,-weeks*7+1);
+  let cells="";for(let i=0;i<weeks*7;i++){const d=addDays(start,i),k=iso(d),h=hoursOn(k);const l=h===0?"":h<3?"l1":h<6?"l2":h<9?"l3":"l4";cells+=`<i class="${l} ${k===todayISO()?"today":""}" title="${fmtShort(d)}: ${h.toFixed(1)} h" style="${d>t?"opacity:.35":""}"></i>`}
+  const sum=(from,to)=>{let a=0;for(let d=new Date(from);d<=to;d=addDays(d,1))a+=hoursOn(iso(d));return a};
+  const wk=sum(addDays(t,-6),t), mo=sum(addDays(t,-29),t), all=Object.keys(S.log).reduce((a,k)=>a+hoursOn(k),0);
+  const per=activePapers().map(p=>({p,h:Object.values(S.log).reduce((a,l)=>a+(+l[p.id]||0),0)})), mx=Math.max(1,...per.map(x=>x.h));
+  const t7=Math.round((+S.settings.target||8)*7);
+  return `
+  <h2>Study hours</h2>
+  <div class="grid g3">
+    <div class="card"><div class="stat"><span class="label">Last 7 days</span><b>${wk.toFixed(1)} h</b><span class="small muted">target ${t7} h</span></div><div class="bar"><i style="width:${Math.min(100,wk/t7*100)}%"></i></div></div>
+    <div class="card"><div class="stat"><span class="label">Last 30 days</span><b>${mo.toFixed(1)} h</b><span class="small muted">${(mo/30).toFixed(1)} h per day</span></div></div>
+    <div class="card"><div class="stat"><span class="label">All time</span><b>${all.toFixed(0)} h</b><span class="small muted">streak ${streak()} days</span></div></div>
+  </div>
+  <div class="card"><div class="row between"><div class="label">Last ${weeks} weeks</div><div class="legend small"><span>0</span><span><i class="swatch" style="background:var(--h1)"></i>&lt;3</span><span><i class="swatch" style="background:var(--h2)"></i>3–6</span><span><i class="swatch" style="background:var(--h3)"></i>6–9</span><span><i class="swatch" style="background:var(--h4)"></i>9+ h</span></div></div><div class="heat">${cells}</div></div>
+  <div class="grid g2">
+    <div class="card"><div class="label">Hours by paper</div>${per.map(x=>`<div class="paperline"><span class="k">${x.p.short}</span><div class="bar"><i style="width:${x.h/mx*100}%;background:${col(x.p.id)}"></i></div><span class="num small">${x.h.toFixed(0)}h</span></div>`).join("")}</div>
+    <div class="card"><div class="label">Log a past day</div>
+      <form id="logForm" class="grid" style="grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px">
+        <label class="f">Date<input type="date" id="lDate" value="${iso(addDays(t,-1))}"></label>
+        <label class="f">Paper<select id="lPaper">${activePapers().map(p=>`<option value="${p.id}">${p.short}</option>`).join("")}</select></label>
+        <label class="f">Hours<input type="number" id="lHrs" step="0.5" min="0" max="16" placeholder="3"></label>
+        <button class="primary" style="align-self:end">Set hours</button>
+      </form>
+      <p class="small muted" style="margin:0">This sets the total for that paper on that day. Use 0 to clear it.</p>
+    </div>
+  </div>`;
+};
+
+V.playbook=()=>`
+  <h2>AIR playbook</h2>
+  <div class="grid g3">
+    <div class="card"><div class="label">What a rank takes</div><div class="stat"><b>500+/600</b><span class="small muted">Recent AIR 1 totals have been roughly 83–86%.</span></div><p class="small" style="margin:0">Top-50 ranks usually need 70%+ aggregate in both groups together, in a single attempt. Check the current merit list on icai.org.</p></div>
+    <div class="card"><div class="label">Per-paper target</div><div class="stat"><b>75–85</b><span class="small muted">FR, AFM and DT are where rankers build a lead</span></div><p class="small" style="margin:0">Audit and IDT theory reward exact ICAI wording. IBS rewards structure. A single paper under 65 makes a top rank hard.</p></div>
+    <div class="card"><div class="label">Exam maths</div><div class="stat"><b>1.8 min</b><span class="small muted">per mark: 180 minutes for 100 marks</span></div><p class="small" style="margin:0">Budget about 1.6 minutes a mark so you keep 15 minutes for review. Never leave an attempted question without a conclusion.</p></div>
+  </div>
+  <details class="pw" open><summary>The non-negotiables</summary><div class="prose"><ul>
+    <li><b>ICAI material is the syllabus.</b> Study material, RTPs, MTPs, past papers with suggested answers, and the case-scenario booklets. Coaching notes are a supplement.</li>
+    <li><b>Three revisions minimum</b> before the exam. The third is from your own condensed notes and takes 2–3 days per paper.</li>
+    <li><b>Write full papers.</b> At least 2–3 full 3-hour mocks per paper, written by hand at 2 pm, then self-checked strictly against ICAI answers.</li>
+    <li><b>Amendments decide marks</b> in DT and IDT. Know which Finance Act and notifications apply to your attempt. DT: check whether your attempt is examined under the Income-tax Act, 1961 or the new Income-tax Act, 2025 (in force from 1 April 2026), using ICAI's applicability announcement.</li>
+    <li><b>Spaced recall.</b> Revisit every chapter within 21 days of last touching it. The Today tab surfaces anything overdue.</li>
+    <li><b>Protect sleep and health.</b> 7 hours of sleep. Rankers keep a steady 9–11 hours a day for months; they don't do 16-hour bursts followed by burnout.</li>
+  </ul></div></details>
+  <details class="pw"><summary>FR · Financial Reporting</summary><div class="prose"><ul>
+    <li>Answer as an examiner reads it: state the relevant Ind AS and paragraph principle, apply it to the facts, then conclude with the journal entry or numbers.</li>
+    <li>Consolidation, Ind AS 103, 109, 115 and 116 carry most of the marks. Do every RTP, MTP and PYQ question on these at least twice.</li>
+    <li>Keep a “trap list”: contingent consideration, NCI measurement choice, modification accounting, ECL staging.</li>
+    <li>Working notes must be numbered and referenced. Presentation marks are real.</li>
+  </ul></div></details>
+  <details class="pw"><summary>AFM · Advanced Financial Management</summary><div class="prose"><ul>
+    <li>Make a one-page formula sheet per chapter and read it daily in the final month.</li>
+    <li>Derivatives, Forex and Portfolio are the most frequent: solve every ICAI question.</li>
+    <li>Write assumptions explicitly, round consistently, and finish with an advisory line (“the company should hedge using…”).</li>
+    <li>Theory questions (startup finance, financial policy) are short and quick to score. Don't skip them.</li>
+  </ul></div></details>
+  <details class="pw"><summary>Audit · Advanced Auditing & Professional Ethics</summary><div class="prose"><ul>
+    <li>Use the 4-step format: provisions (SA number and requirement), facts, analysis, conclusion.</li>
+    <li>Memorise SA numbers with titles and key paragraphs. Make an SA one-pager.</li>
+    <li>For ethics, quote the exact clause of Schedule I or II to the CA Act, and state whether the member is guilty.</li>
+    <li>Use ICAI keywords. Practise writing, because reading alone feels like knowing.</li>
+  </ul></div></details>
+  <details class="pw"><summary>DT · Direct Tax & International Taxation</summary><div class="prose"><ul>
+    <li>Quote section numbers where possible, as they lift theory and computational marks.</li>
+    <li>PGBP, capital gains, TDS, business entities and transfer pricing need the most practice.</li>
+    <li>International tax is largely theory plus treaty interpretation, and it scores well with structured answers.</li>
+    <li>Keep a rates and thresholds sheet updated for your applicable Finance Act.</li>
+  </ul></div></details>
+  <details class="pw"><summary>IDT · GST, Customs & FTP</summary><div class="prose"><ul>
+    <li>The exemption list, ITC rules and place of supply are high-yield. Revise them every week.</li>
+    <li>Write computations in tabular form with a note per item: “Taxable / Exempt, reason”.</li>
+    <li>Customs valuation and FTP are compact and score well. Don't leave them for the end.</li>
+  </ul></div></details>
+  <details class="pw"><summary>IBS · Integrated Business Solutions</summary><div class="prose"><ul>
+    <li>IBS is a multidisciplinary case study paper, currently open book. Confirm the current rules for your attempt. Open book still punishes slow searching, so tab your material.</li>
+    <li>Solve every ICAI case study timed. Read the requirements first, then the case.</li>
+    <li>It pulls from FR, AFM, Audit, DT, IDT and SPOM Sets A and B, so your other papers' revision feeds it.</li>
+    <li>Write in a decision-oriented, report style: issue, analysis, recommendation.</li>
+  </ul></div></details>
+  <details class="pw"><summary>A ranker's study day (template)</summary><div class="prose"><ul>
+    <li><b>06:30–09:30</b> Numerical paper, deep work (FR, AFM or DT)</li>
+    <li><b>09:45–12:45</b> Theory paper (Audit, IDT or law-heavy chapters)</li>
+    <li><b>14:00–17:00</b> Questions and answer writing. This matches the real exam slot.</li>
+    <li><b>17:30–19:30</b> Second paper continued, or a mock</li>
+    <li><b>21:00–22:00</b> Revise today's notes plus anything overdue from the Today tab. Plan tomorrow's tasks.</li>
+  </ul><p class="small muted">Adjust to your rhythm. The point is two papers in parallel and daily writing practice.</p></div></details>`;
+
+const CHECKS = {
+  "Eligibility & registration":[
+    ["el1","Articleship completed, or will be by the eligibility cut-off for this attempt"],
+    ["el2","Advanced ICITSS (IT + Management & Communication Skills) completed"],
+    ["el3","SPOM Set A (Corporate & Economic Laws) qualified"],
+    ["el4","SPOM Set B (Strategic Cost & Performance Management) qualified"],
+    ["el5","Final registration valid for this attempt (revalidate if needed)"],
+    ["el6","Exam form submitted, fee paid, acknowledgement saved"],
+    ["el7","Exam centre and medium (English / Hindi) checked on the form"],
+  ],
+  "Study resources (ICAI first)":[
+    ["rs1","Study material: latest edition applicable to this attempt, all papers"],
+    ["rs2","DT and IDT: applicable Finance Act and amendments noted (and which Income-tax Act applies)"],
+    ["rs3","RTP for this attempt: all papers solved"],
+    ["rs4","MTP Series I: written as full mocks"],
+    ["rs5","MTP Series II: written as full mocks"],
+    ["rs6","Past papers (last 5 attempts) with suggested answers"],
+    ["rs7","IBS case-study compilation and Audit / DT case scenarios"],
+    ["rs8","Personal condensed notes ready for revision 3 (every paper)"],
+  ],
+  "Last 2 weeks":[
+    ["lw1","Admit card downloaded; photo, signature and centre verified"],
+    ["lw2","Visited the exam centre or checked travel time"],
+    ["lw3","Sleep schedule shifted so you are sharp at 2 pm"],
+    ["lw4","Formula sheets and SA / section lists in one folder"],
+    ["lw5","Calculator checked against ICAI's allowed-calculator rules (spare battery)"],
+    ["lw6","IBS: open-book material tabbed and indexed (confirm the rules)"],
+  ],
+  "Exam day":[
+    ["ed1","Admit card printout and original photo ID"],
+    ["ed2","Blue / black pens (3+), pencil, scale, eraser in a transparent pouch"],
+    ["ed3","Analogue watch (smartwatches are not allowed)"],
+    ["ed4","Water bottle and a light snack"],
+    ["ed5","Reach 60 minutes early. Use the 15-minute reading time to plan the order of questions"],
+    ["ed6","No phone or programmable devices on you"],
+  ],
+};
+V.checklists=()=>`
+  <div class="row between"><h2>Checklists</h2><span class="small muted">Rules change. Confirm eligibility and exam rules on icai.org for your attempt.</span></div>
+  <div class="grid g2">${Object.entries(CHECKS).map(([title,items])=>{const done=items.filter(([k])=>S.checks[k]).length;return `<div class="card"><div class="row between"><h3>${esc(title)}</h3><span class="chip ${done===items.length?"A":""}">${done}/${items.length}</span></div><ul class="list">${items.map(([k,t])=>`<li class="${S.checks[k]?"done":""}"><label><input type="checkbox" class="chk" data-act="check" data-k="${k}" ${S.checks[k]?"checked":""}><span>${esc(t)}</span></label></li>`).join("")}</ul></div>`}).join("")}</div>`;
+
+let confirmReset=false;
+V.setup=()=>`
+  <h2>Setup</h2>
+  <div class="grid g2">
+    <div class="card"><div class="label">Your attempt</div>
+      <form id="setForm" class="grid" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px">
+        <label class="f">Paper 1 exam date<input type="date" id="sExam" value="${S.settings.examDate}"></label>
+        <label class="f">Plan start date<input type="date" id="sStart" value="${S.settings.startDate}"></label>
+        <label class="f">Groups<select id="sGroups"><option value="both" ${S.settings.groups==="both"?"selected":""}>Both groups</option><option value="1" ${S.settings.groups==="1"?"selected":""}>Group I only</option><option value="2" ${S.settings.groups==="2"?"selected":""}>Group II only</option></select></label>
+        <label class="f">Daily hours target<input type="number" id="sTarget" min="1" max="16" value="${S.settings.target}"></label>
+        <label class="f">Revise after (days)<input type="number" id="sRev" min="5" max="60" value="${S.settings.revDays}"></label>
+        <label class="f">Target % per paper<input type="number" id="sPct" min="40" max="100" value="${S.settings.targetPct}"></label>
+        <button class="primary" style="grid-column:1/-1">Save settings</button>
+      </form>
+      <p class="small muted" style="margin:0">CA Final is held three times a year (January, May, September). Enter the date of your first paper once ICAI publishes the schedule.</p>
+    </div>
+    <div class="card"><div class="label">Backup</div>
+      <p class="small" style="margin:0">Your progress syncs to your account when you open this page signed in to Claude, and is also kept on this device. Copy a backup now and then.</p>
+      <div class="row"><button id="copyBk">Copy backup</button></div>
+      <textarea id="bkText" rows="4" placeholder="Paste a backup here to restore it"></textarea>
+      <div class="row"><button id="importBk">Restore from pasted backup</button></div>
+      ${confirmReset?`<div class="confirm"><span class="small">This erases all progress, logs and mocks.</span><button class="danger" id="resetYes">Erase everything</button><button id="resetNo">Keep my data</button></div>`:`<div class="row"><button class="danger" id="resetAsk">Reset all data</button></div>`}
+    </div>
+  </div>`;
+
+/* ============ RENDER & EVENTS ============ */
+let view="today";
+function render(){
+  const tag=document.getElementById("examTag");
+  const dl=diffDays(new Date(),parse(S.settings.examDate));
+  document.getElementById("daysLeft").textContent=dl>=0?dl:"0";
+  tag.textContent=`Exam ${fmt(S.settings.examDate)} · ${S.settings.groups==="both"?"both groups":"Group "+(S.settings.groups==="1"?"I":"II")}`;
+  document.querySelectorAll("#tabs a").forEach(a=>a.classList.toggle("on",a.dataset.v===view));
+  const active=document.activeElement, aid=active&&active.id, pos=active&&active.selectionStart;
+  document.getElementById("main").innerHTML=`<section class="view">${V[view]()}</section>`;
+  if(aid){const el=document.getElementById(aid);if(el){el.focus();try{el.setSelectionRange(pos,pos)}catch(e){}}}
+}
+function route(){const h=location.hash.replace("#","");view=V[h]?h:"today";render()}
+window.addEventListener("hashchange",route);
+let tt;function toast(m){const t=document.getElementById("toast");t.textContent=m;t.classList.add("show");clearTimeout(tt);tt=setTimeout(()=>t.classList.remove("show"),1800)}
+function touch(k){S.ch[k]=Object.assign({},S.ch[k],{last:todayISO()})}
+
+document.addEventListener("click",e=>{
+  const b=e.target.closest("[data-act]");
+  if(b){const a=b.dataset.act;
+    if(a==="hr"){const t=todayISO();S.log[t]=S.log[t]||{};S.log[t][b.dataset.p]=Math.max(0,(+S.log[t][b.dataset.p]||0)+ +b.dataset.d);save();render();return}
+    if(a==="deltodo"){S.todos[todayISO()].splice(+b.dataset.i,1);save();render();return}
+    if(a==="touch"){touch(b.dataset.k);save();render();toast("Marked as revised today");return}
+    if(a==="paper"){curPaper=b.dataset.p;render();return}
+    if(a==="filter"){chFilter=b.dataset.f;render();return}
+    if(a==="conf"){const k=b.dataset.k,n=+b.dataset.n;S.ch[k]=Object.assign({},S.ch[k]);S.ch[k].conf=S.ch[k].conf===n?0:n;touch(k);save();render();return}
+    if(a==="delmock"){S.mocks=S.mocks.filter(m=>m.id!==b.dataset.id);save();render();return}
+  }
+  const id=e.target.id;
+  if(id==="resetAsk"){confirmReset=true;render()}
+  if(id==="resetNo"){confirmReset=false;render()}
+  if(id==="resetYes"){const keep=S.settings;S=freshState();S.settings=keep;confirmReset=false;save();render();toast("All progress erased")}
+  if(id==="copyBk"){const txt=JSON.stringify(S);const ta=document.getElementById("bkText");if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(txt).then(()=>toast("Backup copied"),()=>{ta.value=txt;ta.select();toast("Select all and copy the text")})}else{ta.value=txt;ta.select();toast("Select all and copy the text")}}
+  if(id==="importBk"){try{const o=JSON.parse(document.getElementById("bkText").value);if(!o||!o.settings)throw 0;S=Object.assign(freshState(),o);save();render();toast("Backup restored")}catch(err){toast("That text isn't a valid backup. Paste the full copied text.")}}
+});
+document.addEventListener("change",e=>{
+  const b=e.target.closest("[data-act]");if(!b)return;const a=b.dataset.act;
+  if(a==="stage"){const k=b.dataset.k;S.ch[k]=Object.assign({},S.ch[k],{[b.dataset.s]:b.checked});touch(k);save();render()}
+  if(a==="todo"){S.todos[todayISO()][+b.dataset.i].done=b.checked;save();render()}
+  if(a==="check"){S.checks[b.dataset.k]=b.checked;save();render()}
+  if(a==="note"){const k=b.dataset.k;S.ch[k]=Object.assign({},S.ch[k],{note:b.value});save()}
+});
+document.addEventListener("submit",e=>{
+  e.preventDefault();const f=e.target.id,v=id=>document.getElementById(id).value;
+  if(f==="todoForm"){const t=v("todoIn").trim();if(!t)return;const d=todayISO();(S.todos[d]=S.todos[d]||[]).push({t,done:false});save();render();document.getElementById("todoIn").focus()}
+  if(f==="mockForm"){const sc=parseFloat(v("mScore")),mx=parseFloat(v("mMax"))||100;if(isNaN(sc)||sc<0||sc>mx){toast("Enter marks between 0 and "+mx);return}mockForm.paper=v("mPaper");S.mocks.push({id:Date.now().toString(36),paper:v("mPaper"),date:v("mDate")||todayISO(),score:sc,max:mx,src:v("mSrc").trim()});save();render();toast("Score saved")}
+  if(f==="logForm"){const d=v("lDate"),h=parseFloat(v("lHrs"));if(!d||isNaN(h)){toast("Pick a date and enter hours");return}S.log[d]=S.log[d]||{};S.log[d][v("lPaper")]=h;save();render();toast("Hours updated")}
+  if(f==="setForm"){const ex=v("sExam"),st=v("sStart");if(!ex||!st||st>=ex){toast("Start date must be before the exam date");return}Object.assign(S.settings,{examDate:ex,startDate:st,groups:v("sGroups"),target:+v("sTarget")||10,revDays:+v("sRev")||21,targetPct:+v("sPct")||75});save();render();toast("Settings saved")}
+});
+
+route();
+initSync();
+</script>
