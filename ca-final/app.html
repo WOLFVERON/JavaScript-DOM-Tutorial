@@ -142,6 +142,7 @@ svg text{fill:var(--muted);font-family:var(--mono);font-size:10px}
     <nav class="tabs" id="tabs">
       <a href="#today" data-v="today">Today</a>
       <a href="#syllabus" data-v="syllabus">Syllabus</a>
+      <a href="#journal" data-v="journal">Tough topics</a>
       <a href="#plan" data-v="plan">Timeline</a>
       <a href="#mocks" data-v="mocks">Mocks</a>
       <a href="#hours" data-v="hours">Hours</a>
@@ -338,6 +339,7 @@ async function initSync(){
     const id=await user.id(); if(!id) return;
     myId=id; userNs=user;
     try{amOwner=await user.isOwner()}catch(e){}
+    initJournalSync(db,id,user);
     examDoc=db.doc("shared/exam");
     examDoc.onSnapshot(sn=>{const d=sn.exists?sn.data():null;sharedExam=d&&d.dates?d:null;render()},()=>{});
     dbRef=db.collection("data/users/"+id).doc("state");
@@ -437,8 +439,186 @@ function buildPlan(){
 }
 function currentBlock(plan){const t=parse(todayISO());for(const ph of plan.phases)for(const b of ph.blocks)if(t>=b.start&&t<b.end)return {ph,b};return null}
 
-/* ============ VIEWS ============ */
 const V={};
+/* ============ TOUGH TOPICS JOURNAL ============ */
+/* Quick bank: short revision cards on stable, frequently examined concepts. Verify against ICAI study material. */
+const BANK=[
+ {p:"fr",tags:["115","revenue","performance obligation","5 step","five step","variable consideration","over time"],t:"Ind AS 115: the 5-step model",pts:["1. Identify the contract. 2. Identify performance obligations (distinct goods or services). 3. Determine the transaction price. 4. Allocate it on relative standalone selling prices. 5. Recognise revenue when or as each obligation is satisfied.","Variable consideration: expected value or most likely amount, included only to the extent a significant reversal is highly probable not to occur (the constraint).","Over time if any one: customer simultaneously receives and consumes; the work creates or enhances an asset the customer controls; no alternative use plus an enforceable right to payment for work done.","Also adjust for a significant financing component, non-cash consideration and consideration payable to the customer."]},
+ {p:"fr",tags:["principal","agent","gross","net","115"],t:"Ind AS 115: principal vs agent",pts:["Principal if the entity controls the good or service before it transfers to the customer, and records revenue gross.","Indicators: primarily responsible for fulfilment, bears inventory risk, has discretion over price.","Agent records only its commission or fee (net)."]},
+ {p:"fr",tags:["116","lease","lessee","right of use","rou","lease liability"],t:"Ind AS 116: lessee accounting",pts:["At commencement: lease liability = PV of unpaid lease payments, discounted at the rate implicit in the lease or else the incremental borrowing rate.","ROU asset = lease liability + payments made at or before commencement + initial direct costs + restoration costs − lease incentives received.","Optional exemptions: short-term leases (12 months or less) and low-value assets.","After that: depreciate the ROU asset and unwind interest on the liability. Remeasure on reassessment or modification."]},
+ {p:"fr",tags:["sale and leaseback","leaseback","116"],t:"Ind AS 116: sale and leaseback",pts:["First test whether the transfer is a sale under Ind AS 115.","If it is a sale: measure the ROU asset at the proportion of the previous carrying amount retained, and recognise gain or loss only on the rights transferred to the buyer-lessor.","If not a sale: the seller-lessee keeps the asset and recognises a financial liability (Ind AS 109)."]},
+ {p:"fr",tags:["109","classification","sppi","business model","amortised cost","fvoci","fvtpl","financial asset"],t:"Ind AS 109: classifying financial assets",pts:["Two tests: business model and SPPI (contractual cash flows are solely payments of principal and interest).","Hold to collect + SPPI → amortised cost. Hold to collect and sell + SPPI → FVOCI (with recycling). Everything else → FVTPL.","Equity not held for trading: irrevocable FVOCI election at initial recognition, with no recycling to P&L.","Fair value option is available to remove an accounting mismatch."]},
+ {p:"fr",tags:["ecl","expected credit loss","impairment","stage","109","provision matrix"],t:"Ind AS 109: expected credit loss",pts:["Stage 1: 12-month ECL. Stage 2 (significant increase in credit risk): lifetime ECL. Stage 3 (credit-impaired): lifetime ECL, with interest on the net carrying amount.","Rebuttable presumption: more than 30 days past due means a significant increase in credit risk.","Simplified approach: lifetime ECL for trade receivables without a significant financing component, often using a provision matrix."]},
+ {p:"fr",tags:["compound","convertible","32","debenture","split accounting"],t:"Ind AS 32: compound instruments",pts:["Liability component = PV of contractual cash flows at the market rate for similar debt without conversion.","Equity component = proceeds − liability component (residual).","No gain or loss on initial recognition. On conversion, transfer the liability carrying amount to equity."]},
+ {p:"fr",tags:["103","business combination","goodwill","bargain","acquisition","nci","contingent consideration"],t:"Ind AS 103: acquisition method",pts:["Identify the acquirer and acquisition date, then measure identifiable assets and liabilities at fair value.","NCI at fair value or proportionate share of net assets (choice per combination).","Goodwill = consideration + NCI + fair value of previously held interest − net identifiable assets.","Bargain purchase (after reassessment): gain in OCI and accumulated in capital reserve where there is clear evidence of the reason; otherwise directly in capital reserve.","Acquisition costs are expensed. Contingent consideration is at fair value at acquisition date. Measurement period is up to 1 year."]},
+ {p:"fr",tags:["common control","appendix c","pooling","103"],t:"Ind AS 103 Appendix C: common control",pts:["Pooling of interests: assets and liabilities at carrying amounts, with no fair valuation and no new goodwill.","Difference between consideration and the transferor's share capital goes to capital reserve.","Restate comparatives as if the combination happened from the start of the earliest period presented."]},
+ {p:"fr",tags:["110","control","consolidation","subsidiary","de facto"],t:"Ind AS 110: control",pts:["Control needs all three: power over the investee, exposure or rights to variable returns, and the ability to use power to affect those returns.","Consider substantive potential voting rights and de facto control (large holding versus dispersed others).","Reassess when facts change."]},
+ {p:"fr",tags:["36","impairment","cgu","recoverable amount","value in use"],t:"Ind AS 36: impairment",pts:["Impair when carrying amount > recoverable amount = higher of fair value less costs of disposal and value in use.","Test goodwill and indefinite-life intangibles at least annually.","Allocate a CGU loss to goodwill first, then pro rata to other assets, but not below the highest of FVLCD, VIU or zero.","Goodwill impairment is never reversed."]},
+ {p:"fr",tags:["33","eps","diluted","earnings per share","treasury"],t:"Ind AS 33: diluted EPS",pts:["Adjust profit for the after-tax effect of dilutive potential shares (e.g. interest on convertibles) and add the potential shares.","Options: the dilutive element = shares under option − shares that could be bought at average market price with the proceeds.","Rank potential shares from most to least dilutive and ignore anti-dilutive ones.","Bonus issues and splits adjust all periods presented retrospectively."]},
+ {p:"fr",tags:["102","share based","esop","vesting","grant date"],t:"Ind AS 102: share-based payment",pts:["Equity-settled: measure at grant-date fair value, not remeasured. Expense over the vesting period using the best estimate of awards expected to vest.","Market conditions are built into grant-date fair value with no true-up. Non-market conditions are trued up.","Cash-settled: liability remeasured to fair value at each reporting date until settlement."]},
+ {p:"afm",tags:["capm","beta","sharpe","treynor","jensen","portfolio","sml"],t:"Portfolio: CAPM and performance ratios",pts:["E(R) = Rf + β(Rm − Rf). β = Cov(i,m) / Var(m). Portfolio β = weighted average of betas.","Sharpe = (Rp − Rf) / σp (total risk). Treynor = (Rp − Rf) / βp (systematic risk).","Jensen's alpha = Rp − [Rf + βp(Rm − Rf)].","SML uses β (any asset). CML uses σ (efficient portfolios only)."]},
+ {p:"afm",tags:["option","black scholes","put call parity","binomial","call","put","derivative"],t:"Options: parity, Black-Scholes, binomial",pts:["Put-call parity: C + PV(X) = P + S.","Black-Scholes: C = S·N(d1) − X·e^(−rt)·N(d2); d1 = [ln(S/X) + (r + σ²/2)t] / (σ√t); d2 = d1 − σ√t.","Binomial risk-neutral probability p = (e^(rt) − d) / (u − d). Value = discounted expected payoff."]},
+ {p:"afm",tags:["futures","hedge","stock futures","cost of carry","index futures","derivative"],t:"Futures: pricing and hedging",pts:["Fair futures price = (S − PV of dividends) × e^(rt), the cost of carry model.","Contracts to hedge = β × portfolio value / (futures price × lot size).","To change the portfolio β: contracts = (β target − β current) × portfolio value / futures contract value."]},
+ {p:"afm",tags:["forex","forward","irp","ppp","money market hedge","exchange","premium","discount"],t:"Forex: parity and hedging",pts:["IRP (direct quote): Forward = Spot × (1 + i home) / (1 + i foreign) for the period.","Annualised premium or discount = (F − S) / S × 12 / months × 100.","Money market hedge for a payable: borrow home currency, convert at spot, and invest abroad the PV of the payable.","Always state which currency is home and whether quotes are direct or indirect."]},
+ {p:"afm",tags:["bond","ytm","duration","modified duration","convexity","security valuation"],t:"Bonds: YTM and duration",pts:["Approx. YTM = [C + (F − P)/n] / [(F + P)/2].","Macaulay duration = Σ t × PV(CF_t) / Price. Modified duration = Macaulay / (1 + y).","% price change ≈ −Modified duration × Δy. Convexity improves the estimate for large changes."]},
+ {p:"afm",tags:["merger","swap ratio","exchange ratio","synergy","acquisition","eps"],t:"M&A: exchange ratios",pts:["Swap ratio can be based on EPS, market price, book value or intrinsic value.","Post-merger EPS = combined earnings / (acquirer shares + new shares issued).","Maximum ratio for no EPS dilution: solve so post-merger EPS ≥ acquirer's pre-merger EPS.","Synergy = V(AB) − V(A) − V(B)."]},
+ {p:"audit",tags:["570","going concern","material uncertainty"],t:"SA 570: going concern",pts:["Evaluate management's assessment covering at least 12 months from the end of the reporting period.","Material uncertainty adequately disclosed: unmodified opinion plus a 'Material Uncertainty Related to Going Concern' section.","Inadequate disclosure: qualified or adverse opinion.","Going concern basis inappropriate but used: adverse opinion."]},
+ {p:"audit",tags:["705","modified opinion","qualified","adverse","disclaimer"],t:"SA 705: modified opinions",pts:["Misstatement, material but not pervasive → qualified. Material and pervasive → adverse.","Unable to obtain sufficient appropriate evidence: material but not pervasive → qualified; material and pervasive → disclaimer.","Add a 'Basis for qualified / adverse / disclaimer of opinion' paragraph."]},
+ {p:"audit",tags:["701","kam","key audit matters"],t:"SA 701: key audit matters",pts:["KAMs are matters of most significance, chosen from those communicated with TCWG.","Consider higher assessed or significant risks, significant judgements and significant events of the period.","Required for listed entities (and where law or the auditor decides).","A KAM is not a substitute for a modified opinion. A matter causing modification is not reported as a KAM."]},
+ {p:"audit",tags:["706","emphasis of matter","other matter","eom"],t:"SA 706: EOM vs Other Matter",pts:["Emphasis of Matter: draws attention to a matter properly presented or disclosed that is fundamental to users' understanding.","Other Matter: a matter not presented or disclosed but relevant to users' understanding of the audit, the auditor's responsibilities or the report.","Neither modifies the opinion."]},
+ {p:"audit",tags:["530","sampling","tolerable","deviation"],t:"SA 530: audit sampling",pts:["Sampling risk (conclusion differs from testing the whole population) vs non-sampling risk (other errors, e.g. wrong procedure).","Tests of controls: compare the deviation rate with the tolerable rate of deviation.","Tests of details: project misstatements to the population and compare with tolerable misstatement.","Use stratification for variability. Treat genuine anomalies separately."]},
+ {p:"audit",tags:["answer format","case study","how to write","presentation"],t:"Writing audit answers",pts:["Four steps: (1) relevant provision with SA or section number, (2) facts in brief, (3) analysis linking facts to the provision, (4) clear conclusion.","Use ICAI keywords and write the SA title with its number.","For ethics, name the Schedule and Clause of the CA Act and conclude whether the member is guilty."]},
+ {p:"dt",tags:["transfer pricing","arm's length","tnmm","cup","apa","safe harbour","92"],t:"Transfer pricing: methods and range",pts:["Methods: CUP, Resale Price, Cost Plus, Profit Split, TNMM, and other method. Use the most appropriate method.","Arm's length range: 35th–65th percentile when there are enough comparable data sets (6 or more), otherwise arithmetic mean with tolerance (1% wholesale traders, 3% others).","APA: up to 5 future years plus rollback. Also safe harbour rules and secondary adjustment.","Check section and rule numbers under the Act applicable to your attempt."]},
+ {p:"dt",tags:["residential status","resident","182 days","rnor","deemed resident","residence"],t:"Residential status of individuals",pts:["Resident if in India 182 days or more in the year, or 60 days or more in the year plus 365 days or more in the 4 preceding years.","The 60-day rule becomes 182 days for an Indian citizen leaving for employment or as crew. It becomes 120 days for citizens or PIOs visiting India whose Indian income exceeds ₹15 lakh.","Deemed resident: Indian citizen with Indian income over ₹15 lakh who is not liable to tax in any other country.","Check the provisions under the Act applicable to your attempt (1961 or 2025)."]},
+ {p:"idt",tags:["place of supply","pos","services","igst","b2b"],t:"GST: place of supply of services (general rule)",pts:["Supplier and recipient in India, general rule: to a registered person → recipient's location.","To an unregistered person → recipient's address on record, otherwise the supplier's location.","Specific rules override, e.g. immovable property → where the property is; restaurant or beauty services → where performed.","Inter-state vs intra-state depends on supplier location vs place of supply."]},
+ {p:"idt",tags:["itc","input tax credit","section 16","conditions","2b","180 days"],t:"GST: conditions for ITC",pts:["Possession of tax invoice or debit note; details reflected in GSTR-2B; goods or services received; tax actually paid to the government by the supplier; return filed.","Pay the supplier within 180 days of the invoice or reverse the ITC with interest (reclaim on payment).","Time limit: 30 November after the end of the FY, or the annual return date, whichever is earlier.","Blocked credits under section 17(5) apply on top of these."]},
+ {p:"idt",tags:["customs valuation","transaction value","assessable value","20%","1.125"],t:"Customs: valuation of imports",pts:["Transaction value + additions (e.g. commissions, royalties, cost of transport and insurance up to the place of importation).","Transport cost not ascertainable → 20% of FOB. Insurance not ascertainable → 1.125% of FOB.","Exchange rate: as notified by CBIC on the date of filing the bill of entry.","Rate of duty: date of presenting the bill of entry, or entry inwards of the vessel if later."]},
+];
+const INTERVALS=[1,3,7,14,30,60];
+const JK=LS+".journal";
+let J=[]; try{J=JSON.parse(localStorage.getItem(JK)||"[]")}catch(e){}
+let jCol=null, jWrites={}, sampleNs=null, jGen={}, jFilter="due", jPaperF="all", jOpen=null, jDel=null, rv=null, jPrefill=null;
+function jSaveLocal(){try{localStorage.setItem(JK,JSON.stringify(J))}catch(e){}}
+function jPut(e){e.u=Date.now();const i=J.findIndex(x=>x.id===e.id);if(i<0)J.push(e);else J[i]=e;jSaveLocal();
+  if(jCol){const id=e.id,body={e:JSON.stringify(e),u:e.u};jWrites[id]=(jWrites[id]||Promise.resolve()).then(()=>jCol.doc(id).set(body)).catch(()=>{})}}
+function jRemove(id){J=J.filter(x=>x.id!==id);jSaveLocal();if(jCol){jWrites[id]=(jWrites[id]||Promise.resolve()).then(()=>jCol.doc(id).delete()).catch(()=>{})}}
+function initJournalSync(db,id,user){
+  jCol=db.collection("data/users/"+id+"/state/journal");let first=true;
+  jCol.onSnapshot(qs=>{
+    const ch=qs.docChanges();
+    ch.forEach(c=>{let r;try{r=JSON.parse(c.doc.data().e)}catch(err){return}
+      const i=J.findIndex(x=>x.id===r.id);
+      if(c.type==="removed"){if(i>=0&&(J[i].u||0)<=(r.u||0))J.splice(i,1)}
+      else if(i<0)J.push(r); else if((r.u||0)>(J[i].u||0))J[i]=r;});
+    if(first){first=false;const remote=new Set(qs.docs.map(d=>d.id));J.filter(x=>!remote.has(x.id)).forEach(x=>{jWrites[x.id]=Promise.resolve().then(()=>jCol.doc(x.id).set({e:JSON.stringify(x),u:x.u||Date.now()})).catch(()=>{})})}
+    jSaveLocal(); if(view==="journal"||view==="today")render();
+  },()=>{});
+  claude.use("sample").then(s=>{sampleNs=s;if(view==="journal")render()}).catch(()=>{});
+}
+function jDue(){const t=todayISO();return J.filter(e=>!e.mastered&&e.due<=t)}
+function bankFor(e){const hay=(e.topic+" "+(e.ch>=0&&CH[e.p][e.ch]?CH[e.p][e.ch][0]:"")).toLowerCase();
+  return BANK.map(b=>({b,s:b.p!==e.p?0:b.tags.reduce((a,t)=>a+(hay.includes(t)?t.length:0),0)})).filter(x=>x.s>0).sort((a,b)=>b.s-a.s).slice(0,2).map(x=>x.b)}
+function chName(e){return e.ch>=0&&CH[e.p][e.ch]?CH[e.p][e.ch][0]:"General"}
+function rate(e,r){const t=parse(todayISO());e.reviews=(e.reviews||[]).concat([{d:todayISO(),r}]);
+  if(r==="forgot"){e.box=0;e.due=iso(addDays(t,1))}
+  else if(r==="hard"){e.due=iso(addDays(t,Math.max(1,Math.round(INTERVALS[e.box||0]/2))))}
+  else{e.box=Math.min((e.box||0)+1,INTERVALS.length-1);e.due=iso(addDays(t,INTERVALS[e.box]));if(e.box>=INTERVALS.length-1&&r==="good"&&e.reviews.filter(x=>x.r==="good").length>=5)e.mastered=true}
+  jPut(e)}
+function reviewPrompt(e){
+  const qs=(e.card&&e.card.questions)||[];
+  if(qs.length){const q=qs[(e.reviews||[]).length%qs.length];return {q:q.q,a:`<p style="margin:0">${esc(q.a)}</p>${e.card.points?`<ul>${e.card.points.slice(0,4).map(x=>`<li>${esc(x)}</li>`).join("")}</ul>`:""}`}}
+  const bk=bankFor(e)[0];
+  if(bk)return {q:`Recall the key points: ${e.topic}`,a:`<b>${esc(bk.t)}</b><ul>${bk.pts.map(x=>`<li>${esc(x)}</li>`).join("")}</ul>`};
+  return {q:`Explain from memory in 60 seconds: ${e.topic}`,a:`<p style="margin:0" class="muted">Check your notes or study material.</p>${e.why?`<p style="margin:0"><b>Why it was hard:</b> ${esc(e.why)}</p>`:""}${e.clicked?`<p style="margin:0"><b>What clicked:</b> ${esc(e.clicked)}</p>`:""}`};
+}
+async function genCard(e){
+  if(!sampleNs||jGen[e.id])return; jGen[e.id]=true; render();
+  const p=paperOf(e.p);
+  const prompt=`You are a CA Final (ICAI, new scheme) faculty member writing a quick-revision card for a student.
+Paper: ${p.name}
+Chapter: ${chName(e)}
+Topic the student finds difficult: ${e.topic}
+Type of difficulty: ${e.kind}
+Student's note on why it's hard: ${e.why||"(none)"}
+Student's first exam paper date: ${examStart()}
+
+Rules:
+- Use ICAI study material terminology. Cite Ind AS paragraph principles, SA numbers, or section numbers only when you are confident; otherwise describe the provision without a number.
+- For DT and IDT, note that rates, thresholds and section numbers depend on the Finance Act applicable to the attempt. For DT, the Income-tax Act, 2025 replaces the 1961 Act from 1 April 2026, so add one line telling the student to confirm which Act ICAI examines for their attempt.
+- Be exam-focused, precise and brief. Address the student's stated difficulty directly.
+Return ONLY JSON with this shape:
+{"summary":"2-3 sentence plain explanation","points":["5-7 crisp exam points"],"mnemonic":"one memory hook","traps":["2-3 common exam mistakes"],"questions":[{"q":"short recall question","a":"concise answer"}],"refs":["ICAI references to check, e.g. Ind AS 116 para 26, SA 570"]}
+Give 4 questions.`;
+  try{const c=await sampleNs.json(prompt,{modelTier:"default"});
+    if(!c||!Array.isArray(c.points))throw {code:"invalid_json"};
+    e.card={summary:String(c.summary||""),points:c.points.map(String).slice(0,8),mnemonic:String(c.mnemonic||""),traps:(c.traps||[]).map(String).slice(0,4),questions:(c.questions||[]).filter(q=>q&&q.q).map(q=>({q:String(q.q),a:String(q.a||"")})).slice(0,6),refs:(c.refs||[]).map(String).slice(0,6),at:todayISO()};
+    jPut(e);toast("Revision card ready");
+  }catch(err){const code=err&&err.code;toast(code==="not_granted"?"Claude access was declined for this page":code==="rate_limited"?"Claude is busy. Try again in a minute.":"Couldn't make the card. Try again.")}
+  jGen[e.id]=false;render();
+}
+function journalChip(){const n=jDue().length;if(!J.length)return "";return `<div class="row"><span class="chip ${n?"warn":"A"}">${n?`${n} tough topic${n>1?"s":""} due`:"Tough topics all reviewed"}</span>${n?`<button data-act="jstart">Review now</button>`:""}</div>`}
+V.journal=()=>{
+  const ps=activePapers(), due=jDue(), t=todayISO();
+  if(!jPrefill||!ps.some(p=>p.id===jPrefill.p))jPrefill={p:ps[0].id,ch:-1};
+  const fp=jPrefill.p, fch=jPrefill.ch;
+  let review="";
+  if(rv){const e=J.find(x=>x.id===rv.q[rv.i]);
+    if(!e){rv=null}else{const pr=reviewPrompt(e);
+    review=`<div class="card hero"><div class="row between"><span class="label">Review ${rv.i+1} of ${rv.q.length}</span><button class="ghost" data-act="jend">End review</button></div>
+      <div class="row"><span class="chip"><span class="swatch" style="background:${col(e.p)}"></span>${paperOf(e.p).short}</span><span class="small muted">${esc(chName(e))}</span></div>
+      <h3>${esc(e.topic)}</h3><p style="margin:0;font-weight:500">${esc(pr.q)}</p>
+      ${rv.show?`<div class="prose small" style="border-top:1px solid var(--line);padding-top:10px">${pr.a}</div>
+        <div class="row"><span class="small muted">How did you do?</span><button class="danger" data-act="jrate" data-r="forgot">Forgot · tomorrow</button><button data-act="jrate" data-r="hard">Hard · ${Math.max(1,Math.round(INTERVALS[e.box||0]/2))}d</button><button class="primary" data-act="jrate" data-r="good">Got it · ${INTERVALS[Math.min((e.box||0)+1,INTERVALS.length-1)]}d</button></div>`
+      :`<div class="row"><button class="primary" data-act="jshow">Show answer</button><span class="small muted">Answer in your head (or on paper) first.</span></div>`}</div>`}}
+  const list=J.filter(e=>(jPaperF==="all"||e.p===jPaperF)&&(jFilter==="all"||(jFilter==="due"&&!e.mastered&&e.due<=t)||(jFilter==="active"&&!e.mastered)||(jFilter==="mastered"&&e.mastered))).sort((a,b)=>a.due<b.due?-1:1);
+  const item=e=>{const open=jOpen===e.id, bk=bankFor(e), c=e.card;return `<div class="card" style="gap:8px">
+    <div class="row between"><div class="row"><span class="chip"><span class="swatch" style="background:${col(e.p)}"></span>${paperOf(e.p).short}</span><b>${esc(e.topic)}</b>${e.mastered?'<span class="chip A">mastered</span>':e.due<=t?'<span class="chip warn">due</span>':""}</div>
+      <div class="row small muted"><span title="Box ${(e.box||0)+1} of ${INTERVALS.length}">${INTERVALS.map((_,i)=>`<span class="swatch" style="background:${i<=(e.box||0)?"var(--accent)":"var(--sunk)"}"></span>`).join("")}</span><span class="num">${e.mastered?"":"next "+fmtShort(parse(e.due))}</span><button class="ghost" data-act="jopen" data-id="${e.id}">${open?"Hide":"Open"}</button></div></div>
+    <span class="small muted">${esc(chName(e))} · ${esc(e.kind)} · added ${fmtShort(parse(e.created))} · ${(e.reviews||[]).length} reviews</span>
+    ${open?`<div class="grid" style="gap:10px">
+      ${e.why?`<p class="small" style="margin:0"><b>Why it's hard:</b> ${esc(e.why)}</p>`:""}
+      <label class="f">What finally clicked (write it in your own words)<textarea rows="2" id="jc-${e.id}" data-act="jclick" data-id="${e.id}" style="font-family:var(--body)">${esc(e.clicked||"")}</textarea></label>
+      ${c?`<div class="prose small" style="max-width:none;border:1px solid var(--line);border-radius:8px;padding:12px"><div class="row between"><span class="label">Revision card · Claude · ${fmtShort(parse(c.at))}</span><span class="small muted">Check against ICAI material</span></div>
+        <p>${esc(c.summary)}</p><ul>${c.points.map(x=>`<li>${esc(x)}</li>`).join("")}</ul>
+        ${c.mnemonic?`<p><b>Memory hook:</b> ${esc(c.mnemonic)}</p>`:""}
+        ${c.traps.length?`<p><b>Exam traps:</b></p><ul>${c.traps.map(x=>`<li>${esc(x)}</li>`).join("")}</ul>`:""}
+        ${c.questions.length?`<p><b>Self-test:</b></p><ul>${c.questions.map(q=>`<li>${esc(q.q)} <span class="muted">→ ${esc(q.a)}</span></li>`).join("")}</ul>`:""}
+        ${c.refs.length?`<p class="muted">ICAI references to check: ${c.refs.map(esc).join(" · ")}</p>`:""}</div>`:""}
+      ${bk.map(b=>`<div class="prose small" style="max-width:none;border:1px dashed var(--line);border-radius:8px;padding:12px"><span class="label">Quick bank · ${esc(b.t)}</span><ul>${b.pts.map(x=>`<li>${esc(x)}</li>`).join("")}</ul></div>`).join("")}
+      <div class="row">
+        ${sampleNs?`<button class="primary" data-act="jgen" data-id="${e.id}" ${jGen[e.id]?"disabled":""}>${jGen[e.id]?"Writing card…":c?"Rewrite card with Claude":"Make a revision card with Claude"}</button>`:""}
+        <button data-act="jrev1" data-id="${e.id}">Review this now</button>
+        ${e.mastered?`<button data-act="junmaster" data-id="${e.id}">Move back to active</button>`:""}
+        ${jDel===e.id?`<span class="confirm"><span class="small">Delete this topic?</span><button class="danger" data-act="jdelyes" data-id="${e.id}">Delete</button><button data-act="jdelno">Keep</button></span>`:`<button class="ghost danger" data-act="jdel" data-id="${e.id}">Delete</button>`}
+      </div></div>`:""}
+  </div>`};
+  return `
+  <div class="row between"><h2>Tough topics</h2>${due.length?`<button class="primary" data-act="jstart">Start review · ${due.length} due</button>`:`<span class="small muted">${J.length?"Nothing due today":"Your private journal of hard topics"}</span>`}</div>
+  ${review}
+  <div class="grid g2">
+    <div class="card"><div class="label">Add a topic you find difficult</div>
+      <form id="jForm" class="grid" style="grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px">
+        <label class="f">Paper<select id="jP" data-act="jpaper">${ps.map(p=>`<option value="${p.id}" ${p.id===fp?"selected":""}>${p.short}</option>`).join("")}</select></label>
+        <label class="f">Chapter<select id="jCh"><option value="-1">General</option>${CH[fp].map((c,i)=>`<option value="${i}" ${i===fch?"selected":""}>${esc(c[0].length>60?c[0].slice(0,58)+"…":c[0])}</option>`).join("")}</select></label>
+        <label class="f" style="grid-column:1/-1">Topic<input id="jT" placeholder="e.g. Sale and leaseback gain calculation" required></label>
+        <label class="f">Type<select id="jK"><option>Concept</option><option>Formula / numerical</option><option>Provision / section</option><option>Mock mistake</option><option>Keeps slipping from memory</option></select></label>
+        <label class="f" style="grid-column:1/-1">Why is it hard? (optional)<input id="jW" placeholder="I mix up which portion of the gain to recognise"></label>
+        <button class="primary" style="grid-column:1/-1">Add to journal</button>
+      </form>
+      <p class="small muted" style="margin:0">New topics come up for review tomorrow, then after 3, 7, 14, 30 and 60 days. "Forgot" sends a topic back to the start. You can also add from the Syllabus tab.</p>
+    </div>
+    <div class="card"><div class="label">How it keeps topics on top of your mind</div><div class="prose small">
+      <ul><li><b>Write it down</b> the moment something feels hard: in class, in a mock, in revision.</li>
+      <li><b>Instant help</b>: matching cards from the quick bank appear on their own${sampleNs?", and Claude can write a revision card with points, a memory hook, exam traps and self-test questions":""}.</li>
+      <li><b>Spaced recall</b>: answer the question before revealing it, then rate yourself. Hard topics come back sooner.</li>
+      <li><b>Write "what clicked"</b> in your own words once it makes sense. That line is often the best revision note you'll have.</li></ul>
+      <div class="row" style="gap:24px"><div class="stat"><span class="label">Topics</span><b>${J.length}</b></div><div class="stat"><span class="label">Due</span><b>${due.length}</b></div><div class="stat"><span class="label">Mastered</span><b>${J.filter(e=>e.mastered).length}</b></div></div>
+    </div></div>
+  </div>
+  <div class="row between">
+    <div class="pills">${[["due","Due"],["active","Active"],["mastered","Mastered"],["all","All"]].map(([k,l])=>`<button class="${jFilter===k?"on":""}" data-act="jfilter" data-f="${k}">${l}</button>`).join("")}</div>
+    <div class="pills"><button class="${jPaperF==="all"?"on":""}" data-act="jpf" data-p="all">All papers</button>${ps.map(p=>`<button class="${jPaperF===p.id?"on":""}" data-act="jpf" data-p="${p.id}">${p.short}</button>`).join("")}</div>
+  </div>
+  <div class="grid">${list.map(item).join("")||`<div class="card"><p class="muted small" style="margin:0">${J.length?"No topics match this filter.":"No topics yet. Add the first one above, e.g. a mock mistake from this week."}</p></div>`}</div>`;
+};
+function jClick(b){const a=b.dataset.act,id=b.dataset.id,e=id&&J.find(x=>x.id===id);
+  if(a==="jstart"){const q=jDue().sort((x,y)=>x.due<y.due?-1:1).map(x=>x.id);if(!q.length)return true;rv={q,i:0,show:false};if(view!=="journal")location.hash="journal";else render();window.scrollTo(0,0);return true}
+  if(a==="jrev1"){rv={q:[id],i:0,show:false};render();window.scrollTo(0,0);return true}
+  if(a==="jshow"){rv.show=true;render();return true}
+  if(a==="jend"){rv=null;render();return true}
+  if(a==="jrate"){const cur=J.find(x=>x.id===rv.q[rv.i]);if(cur)rate(cur,b.dataset.r);rv.i++;rv.show=false;if(rv.i>=rv.q.length){rv=null;toast("Review done")}render();return true}
+  if(a==="jopen"){jOpen=jOpen===id?null:id;jDel=null;render();return true}
+  if(a==="jgen"&&e){genCard(e);return true}
+  if(a==="junmaster"&&e){e.mastered=false;e.box=Math.min(e.box||0,3);e.due=todayISO();jPut(e);render();return true}
+  if(a==="jdel"){jDel=id;render();return true}
+  if(a==="jdelno"){jDel=null;render();return true}
+  if(a==="jdelyes"){jRemove(id);jDel=null;render();toast("Topic deleted");return true}
+  if(a==="jfilter"){jFilter=b.dataset.f;render();return true}
+  if(a==="jpf"){jPaperF=b.dataset.p;render();return true}
+  if(a==="tojournal"){jPrefill={p:b.dataset.p,ch:+b.dataset.i};location.hash="journal";setTimeout(()=>{const el=document.getElementById("jT");if(el)el.focus()},50);return true}
+  return false}
+
+/* ============ VIEWS ============ */
 V.today=()=>{
   const plan=buildPlan(), cb=currentBlock(plan), t=todayISO(), hrs=hoursOn(t), tgt=dayTarget(new Date()), we=isWeekend(new Date());
   const due=[];activePapers().forEach(p=>CH[p.id].forEach((c,i)=>{const s=chState(p.id,i);if(s.r&&s.last&&diffDays(parse(s.last),new Date())>=+S.settings.revDays)due.push({p,c,i,s,age:diffDays(parse(s.last),new Date())});else if(s.r&&s.conf&&s.conf<=2)due.push({p,c,i,s,age:s.last?diffDays(parse(s.last),new Date()):0,weak:true})}));
@@ -459,6 +639,7 @@ V.today=()=>{
       ${(()=>{if(daysLeft<0)return"";const exp=expectedPct(plan),act=overall(),gap=Math.round((exp-act)*100);return gap<=2?`<div class="row"><span class="chip A">On track</span><span class="small muted">Plan expects ${Math.round(exp*100)}% by today. You're at ${Math.round(act*100)}%.</span></div>`:`<div class="row"><span class="chip ${gap>10?"bad":"warn"}">${gap}% behind plan</span><span class="small muted">Plan expects ${Math.round(exp*100)}% by today. Tick chapters in Syllabus as you finish them.</span></div>`})()}
       <div class="row small">${activeDates().map(x=>{const d=diffDays(new Date(),parse(x.date));return `<span class="chip" title="${fmt(x.date)}"><span class="swatch" style="background:${col(x.p.id)}"></span>${x.p.short} · ${fmtShort(parse(x.date))}${d>=0?` · ${d}d`:" · done"}</span>`}).join("")}</div>
       ${myRankChip()}
+      ${journalChip()}
     </div>
     <div class="card">
       <div class="row between"><div class="label">Hours today · ${we?"weekend":"weekday"} target</div><span class="num">${hrs.toFixed(1)} / ${tgt} h</span></div>
@@ -505,7 +686,7 @@ V.syllabus=()=>{
       ${STAGES.map(([st,l])=>`<td class="c"><input type="checkbox" class="chk" aria-label="${l}: ${esc(c[0])}" data-act="stage" data-k="${k}" data-s="${st}" ${s[st]?"checked":""}></td>`).join("")}
       <td class="c"><span class="conf">${[1,2,3,4,5].map(n=>`<button aria-label="Confidence ${n}" class="${(s.conf||0)>=n?"on":""}" data-act="conf" data-k="${k}" data-n="${n}"></button>`).join("")}</span></td>
       <td class="num small muted">${s.last?fmtShort(parse(s.last)):"–"}</td>
-      <td><input class="note" id="note-${k}" data-act="note" data-k="${k}" value="${esc(s.note||"")}" placeholder="weak spots, Q numbers…"></td></tr>`}).join("")||`<tr><td colspan="10" class="muted">No chapters match this filter.</td></tr>`}
+      <td><input class="note" id="note-${k}" data-act="note" data-k="${k}" value="${esc(s.note||"")}" placeholder="weak spots, Q numbers…"> <button class="ghost small" data-act="tojournal" data-p="${curPaper}" data-i="${i}" title="Add a tough topic from this chapter">+ Tough topic</button></td></tr>`}).join("")||`<tr><td colspan="10" class="muted">No chapters match this filter.</td></tr>`}
   </table></div>
   <p class="small muted" style="margin:0">Priority A/B/C reflects how often a topic is commonly examined. Check it against ICAI's study material, RTPs and recent papers for your attempt. Ticking any box sets “Last” to today.</p>`;
 };
@@ -762,7 +943,7 @@ V.setup=()=>`
       <div class="row"><button id="copyBk">Copy backup</button></div>
       <textarea id="bkText" rows="4" placeholder="Paste a backup here to restore it"></textarea>
       <div class="row"><button id="importBk">Restore from pasted backup</button></div>
-      ${confirmReset?`<div class="confirm"><span class="small">This erases all progress, logs and mocks.</span><button class="danger" id="resetYes">Erase everything</button><button id="resetNo">Keep my data</button></div>`:`<div class="row"><button class="danger" id="resetAsk">Reset all data</button></div>`}
+      ${confirmReset?`<div class="confirm"><span class="small">This erases all progress, logs, mocks and tough topics.</span><button class="danger" id="resetYes">Erase everything</button><button id="resetNo">Keep my data</button></div>`:`<div class="row"><button class="danger" id="resetAsk">Reset all data</button></div>`}
     </div>
   </div>`;
 
@@ -786,6 +967,7 @@ function touch(k){S.ch[k]=Object.assign({},S.ch[k],{last:todayISO()})}
 document.addEventListener("click",e=>{
   const b=e.target.closest("[data-act]");
   if(b){const a=b.dataset.act;
+    if(jClick(b))return;
     if(a==="hr"){const t=todayISO();S.log[t]=S.log[t]||{};S.log[t][b.dataset.p]=Math.max(0,(+S.log[t][b.dataset.p]||0)+ +b.dataset.d);save();render();return}
     if(a==="deltodo"){S.todos[todayISO()].splice(+b.dataset.i,1);save();render();return}
     if(a==="touch"){touch(b.dataset.k);save();render();toast("Marked as revised today");return}
@@ -800,14 +982,16 @@ document.addEventListener("click",e=>{
   const id=e.target.id;
   if(id==="resetAsk"){confirmReset=true;render()}
   if(id==="resetNo"){confirmReset=false;render()}
-  if(id==="resetYes"){const keep=S.settings;S=freshState();S.settings=keep;confirmReset=false;save();render();toast("All progress erased")}
-  if(id==="copyBk"){const txt=JSON.stringify(S);const ta=document.getElementById("bkText");if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(txt).then(()=>toast("Backup copied"),()=>{ta.value=txt;ta.select();toast("Select all and copy the text")})}else{ta.value=txt;ta.select();toast("Select all and copy the text")}}
-  if(id==="importBk"){try{const o=JSON.parse(document.getElementById("bkText").value);if(!o||!o.settings)throw 0;S=load(o);save();render();toast("Backup restored")}catch(err){toast("That text isn't a valid backup. Paste the full copied text.")}}
+  if(id==="resetYes"){const keep=S.settings;S=freshState();S.settings=keep;J.slice().forEach(e=>jRemove(e.id));confirmReset=false;save();render();toast("All progress erased")}
+  if(id==="copyBk"){const txt=JSON.stringify(Object.assign({},S,{journal:J}));const ta=document.getElementById("bkText");if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(txt).then(()=>toast("Backup copied"),()=>{ta.value=txt;ta.select();toast("Select all and copy the text")})}else{ta.value=txt;ta.select();toast("Select all and copy the text")}}
+  if(id==="importBk"){try{const o=JSON.parse(document.getElementById("bkText").value);if(!o||!o.settings)throw 0;const jj=Array.isArray(o.journal)?o.journal:null;delete o.journal;S=load(o);save();if(jj){jj.forEach(e=>jPut(e))}render();toast("Backup restored")}catch(err){toast("That text isn't a valid backup. Paste the full copied text.")}}
 });
 document.addEventListener("change",e=>{
   const b=e.target.closest("[data-act]");if(!b)return;const a=b.dataset.act;
   if(a==="stage"){const k=b.dataset.k;S.ch[k]=Object.assign({},S.ch[k],{[b.dataset.s]:b.checked});touch(k);save();render()}
   if(a==="todo"){S.todos[todayISO()][+b.dataset.i].done=b.checked;save();render()}
+  if(a==="jpaper"){const pid=b.value;jPrefill={p:pid,ch:-1};const sel=document.getElementById("jCh");if(sel)sel.innerHTML='<option value="-1">General</option>'+CH[pid].map((c,i)=>`<option value="${i}">${esc(c[0].length>60?c[0].slice(0,58)+"…":c[0])}</option>`).join("");return}
+  if(a==="jclick"){const e=J.find(x=>x.id===b.dataset.id);if(e){e.clicked=b.value;jPut(e)}return}
   if(a==="fill"){const dd=defaultDates(b.value);for(const k in dd){const el=document.getElementById("ex-"+k);if(el)el.value=dd[k]}return}
   if(a==="board"){S.settings.onBoard=b.checked;save();pushBoard();render();return}
   if(a==="check"){S.checks[b.dataset.k]=b.checked;save();render()}
@@ -818,6 +1002,7 @@ document.addEventListener("submit",e=>{
   if(f==="todoForm"){const t=v("todoIn").trim();if(!t)return;const d=todayISO();(S.todos[d]=S.todos[d]||[]).push({t,done:false});save();render();document.getElementById("todoIn").focus()}
   if(f==="mockForm"){const sc=parseFloat(v("mScore")),mx=parseFloat(v("mMax"))||100;if(isNaN(sc)||sc<0||sc>mx){toast("Enter marks between 0 and "+mx);return}mockForm.paper=v("mPaper");S.mocks.push({id:Date.now().toString(36),paper:v("mPaper"),date:v("mDate")||todayISO(),score:sc,max:mx,src:v("mSrc").trim()});save();render();toast("Score saved")}
   if(f==="logForm"){const d=v("lDate"),h=parseFloat(v("lHrs"));if(!d||isNaN(h)){toast("Pick a date and enter hours");return}S.log[d]=S.log[d]||{};S.log[d][v("lPaper")]=h;save();render();toast("Hours updated")}
+  if(f==="jForm"){const t=v("jT").trim();if(!t){toast("Enter the topic");return}const e={id:"j"+Date.now().toString(36),p:v("jP"),ch:+v("jCh"),topic:t,kind:v("jK"),why:v("jW").trim(),created:todayISO(),box:0,due:iso(addDays(new Date(),1)),reviews:[],mastered:false,clicked:"",card:null};jPrefill={p:e.p,ch:-1};jPut(e);jOpen=e.id;jFilter="active";render();toast("Added. First review tomorrow.");return}
   if(f==="examForm"){const dd={};for(const p of PAPERS){const x=v("ex-"+p.id);if(!x){toast("Enter a date for "+p.short);return}dd[p.id]=x}
     S.settings.examDates=dd;save();
     if(examDoc&&amOwner){examDoc.set({dates:dd,t:Date.now()}).then(()=>toast("Exam schedule saved for everyone"),()=>toast("Saved for you only. Shared save failed."))}else toast("Exam schedule saved");
