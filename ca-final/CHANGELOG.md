@@ -1,5 +1,29 @@
 # CA Final Rank Desk: changelog
 
+## Phase 3: Intelligent daily study planner (data version 3)
+
+Restore point: `archive/app-v3-pre-phase3.html`. Data upgrades v2 → v3 automatically, with a restore point.
+
+- **Today's plan** replaces "Today's priorities": one plan per day, filling the day's target, with
+  Start / Done / Skip / Tomorrow on each task, Reopen / Restore, and "Rebuild today's plan" (keeps tasks you
+  acted on, re-plans the rest). Plans are built in memory and saved when you act on them; kept for 30 days.
+- **Rescheduling**: unfinished tasks from earlier days are re-checked (dropped if the chapter has since been
+  read, revised, practised or mocked) and carried forward with a priority boost that grows with age. Carried
+  work takes at most half the day (the first-reading slot may exceed it); the rest waits in a backlog that's
+  reported on the plan, with a warning once it exceeds a day. Tasks older than 14 days expire. Partial reading
+  sessions continue the next day with the remaining time. Skipped tasks don't carry; "Tomorrow" carries.
+- **Done updates Syllabus**: Learn ticks Read (not for partial sessions), Revise records the next revision
+  stage and date, Practise ticks Questions. Reopening keeps the tick, and says so.
+- **Focus timer**: choose paper, chapter (optional) and planned length (25 min to 3 h), or press Start on a
+  plan task. Shows elapsed vs planned with a progress bar and a "planned time reached" note. Each session is
+  saved (paper, chapter, task, planned and actual minutes) and logs hours as before; task-linked sessions
+  record progress on the task.
+- **Hours → Focus sessions**: today's sessions, last 7 days' focus time, average length, how often sessions
+  reach the planned time, and the latest 15 sessions.
+- Sync merges sessions from both devices; backups include plans and sessions; reset clears them with
+  "Daily plans and your own tasks" and "Study hours, focus sessions…". The manual list is now "Your own tasks".
+- `tests/phase3.test.js`: 35 checks. Phase 1 and 2 suites updated for the new version and plan card.
+
 ## Phase 2.1: priorities fill the day; 1-minute focus timer
 
 - Today's priorities now add up to today's study target (weekday / weekend hours). Highest-value tasks go

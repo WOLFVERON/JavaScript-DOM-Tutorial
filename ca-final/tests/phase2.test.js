@@ -24,7 +24,7 @@ async function open(b, st, journal, hash = 'today', vp = {width: 1280, height: 9
     const r = await p.evaluate(() => ({R: activePapers().map(x => paperReadiness(x.id).score), W: warnings().length, txt: document.body.textContent}));
     ok('empty: every paper starts at 0 readiness', r.R.every(x => x === 0), r.R);
     ok('empty: no warnings and the all-clear text shows', r.W === 0 && /No warnings right now/.test(r.txt), r.W);
-    ok('empty: overview, priorities, readiness render without errors', /Readiness/.test(r.txt) && /Today's priorities/.test(r.txt) && !p.errs.length, p.errs);
+    ok('empty: overview, priorities, readiness render without errors', /Readiness/.test(r.txt) && /Today's plan/.test(r.txt) && !p.errs.length, p.errs);
     await p.close();
   }
 
@@ -99,9 +99,8 @@ async function open(b, st, journal, hash = 'today', vp = {width: 1280, height: 9
     ok('priorities: first-reading phase always includes new reading', kinds.includes('Learn'), kinds);
     ok('priorities: no more than 2 tasks of one kind on a weekday', ['Revise', 'Learn', 'Practise', 'Mock'].every(k => kinds.filter(x => x === k).length <= 2), kinds);
     ok('priorities: every task has paper context, duration, reason and benefit', P.list.every(x => x.mins > 0 && x.why && x.gain && x.level), P.list);
-    await p.click('button[data-act="priadd"][data-i="0"]'); await p.click('button[data-act="priall"]');
-    const todos = await p.evaluate(() => S.todos[todayISO()].map(t => t.t));
-    ok('priorities: add to tasks, and add all without duplicates', todos.length === P.list.length && new Set(todos).size === todos.length, todos);
+    const shown = await p.evaluate(() => S.plan[todayISO()].tasks.map(x => x.t));
+    ok('priorities: shown on Today as the day plan (same tasks)', shown.length === P.list.length && shown.every((t, i) => t === P.list[i].t), {shown, p: P.list.map(x => x.t)});
     const mock = await p.evaluate(() => { S.ch = {}; for (let i = 0; i < 18; i++) S.ch['fr-' + i] = {r: true, last: todayISO(), hist: []}; J.length = 0; S.settings.tWd = 8; S.settings.tWe = 8; return priorities().list.map(x => x.kind + ':' + x.t) });
     ok('priorities: suggests a mock when a paper is well covered but has none', mock.some(x => /^Mock:Write a full FR mock/.test(x)), mock);
     const wk = await p.evaluate(() => { S.settings.tWd = 8; S.settings.tWe = 8; const r = priorities(); S.settings.tWd = 2.5; S.settings.tWe = 8; return {mins: r.mins, n: r.list.length} });

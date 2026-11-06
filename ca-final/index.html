@@ -347,15 +347,19 @@ function defaultDates(first){const o={};for(const k in GAP)o[k]=iso(addDays(pars
 function freshState(){
   return {v:DATA_VERSION, updatedAt:0,
     settings:{examDates:defaultDates("2028-11-02"), startDate:todayISO(), groups:"both", tWd:2.5, tWe:8, revDays:21, targetPct:75, frDone:false, onBoard:false, share:{hours:true,streak:true,syllabus:true,mocks:true,courses:true,total:true,level:true}, cols:{today:true,week:true,target:true,streak:true,syllabus:true,mocks:true,courses:true,total:true,level:true}, rankBy:"week"},
-    ch:{}, log:{}, mocks:[], checks:{}, todos:{}};
+    ch:{}, log:{}, mocks:[], checks:{}, todos:{}, plan:{}, sessions:[]};
 }
 /* ---- data versions: each step upgrades saved data by one version ---- */
-const DATA_VERSION=2;
+const DATA_VERSION=3;
 const MIGRATIONS={
   2:o=>{ // v1 -> v2: revision history on chapters, drop malformed records
     o.ch=isObj(o.ch)?o.ch:{};for(const k in o.ch){const c=o.ch[k];if(!isObj(c)){delete o.ch[k];continue}if(!Array.isArray(c.hist))c.hist=c.last?[{d:c.last,s:"legacy"}]:[]}
     o.mocks=Array.isArray(o.mocks)?o.mocks.filter(m=>m&&m.id&&isFinite(+m.score)&&+m.max>0):[];
     for(const k of ["log","checks","todos"])if(!isObj(o[k]))o[k]={};
+    return o},
+  3:o=>{ // v2 -> v3: daily plans and focus-session history
+    o.plan=isObj(o.plan)?o.plan:{};
+    o.sessions=Array.isArray(o.sessions)?o.sessions.filter(x=>x&&x.id&&isFinite(+x.start)&&isFinite(+x.mins)):[];
     return o}
 };
 function migrate(o){let v=+o.v||1;while(v<DATA_VERSION){v++;o=MIGRATIONS[v](o);o.v=v}return o}
@@ -386,7 +390,9 @@ let base=store.get(LS+".base",null);
 let sharedExam=null, examDoc=null, amOwner=false;
 let boardCol=null, myId=null, userNs=null, board=[], boardReady=false, lastBoard="", boardErr="", names={};
 function setBase(o){base=o;store.set(LS+".base",o)}
-function pruneTodos(){const cut=iso(addDays(new Date(),-90));for(const k in S.todos)if(k<cut)delete S.todos[k]}
+function pruneTodos(){const cut=iso(addDays(new Date(),-90));for(const k in S.todos)if(k<cut)delete S.todos[k];
+  const pc=iso(addDays(new Date(),-30));for(const k in S.plan||{})if(k<pc)delete S.plan[k];
+  if(Array.isArray(S.sessions)&&S.sessions.length>400)S.sessions=S.sessions.slice(-400)}
 function persistLocal(){store.set(LS,S)}
 function save(){
   S.updatedAt=Date.now();pruneTodos();persistLocal();
@@ -398,8 +404,9 @@ function merge3(b,l,r,pl){if(same(l,r))return l;if(same(l,b))return r;if(same(r,
   if(isObj(l)&&isObj(r)){const o={},bb=isObj(b)?b:{};new Set([...Object.keys(l),...Object.keys(r)]).forEach(k=>{const m=merge3(bb[k],l[k],r[k],pl);if(m!==undefined)o[k]=m});return o}
   return pl?l:r}
 function toMap(a){const o={};(a||[]).forEach(m=>{if(m&&m.id)o[m.id]=m});return o}
-function mergeState(b,l,r){const pl=(l.updatedAt||0)>=(r.updatedAt||0),prep=x=>x?Object.assign({},x,{mocks:toMap(x.mocks)}):{};
-  const m=merge3(prep(b),prep(l),prep(r),pl);m.mocks=Object.values(isObj(m.mocks)?m.mocks:{}).sort((a,c)=>a.date<c.date?-1:1);m.updatedAt=Math.max(l.updatedAt||0,r.updatedAt||0);return load(m)}
+function mergeState(b,l,r){const pl=(l.updatedAt||0)>=(r.updatedAt||0),prep=x=>x?Object.assign({},x,{mocks:toMap(x.mocks),sessions:toMap(x.sessions)}):{};
+  const m=merge3(prep(b),prep(l),prep(r),pl);m.mocks=Object.values(isObj(m.mocks)?m.mocks:{}).sort((a,c)=>a.date<c.date?-1:1);
+  m.sessions=Object.values(isObj(m.sessions)?m.sessions:{}).sort((a,c)=>a.start-c.start);m.updatedAt=Math.max(l.updatedAt||0,r.updatedAt||0);return load(m)}
 /* stop cloud saving for this visit; data stays on the device */
 function noWrite(msg){canWrite=false;dirty=false;clearTimeout(retryT);retryT=null;clearTimeout(saveTimer);dbRef=null;JR.col=null;ER.col=null;
   setSync(false,"Saved on this device only");notice(msg||NO_ACCESS_MSG,"warn");if(view==="squad"||view==="today")render()}
@@ -554,7 +561,7 @@ function journeyCard(){
   </div>`}
 function hitDays(n){let c=0;for(let i=0;i<n;i++){const d=addDays(new Date(),-i);const tg=dayTarget(d);if(tg>0&&hoursOn(iso(d))>=tg)c++}return c}
 /* focus timer (kept on this device) */
-const TK=LS+".timer"; let timer=store.get(TK,null); if(timer&&!(isFinite(timer.start)&&CH[timer.p]))timer=null;
+const TK=LS+".timer"; let timer=store.get(TK,null); if(timer&&!(isFinite(timer.start)&&CH[timer.p]))timer=null;if(timer&&timer.cid&&!chRow(timer.cid))timer.cid=null;
 /* split a timed session into hours per calendar day, so sessions across midnight land on the right days */
 function splitSession(a,b){const out={};let s=a;while(s<b){const d=new Date(s),nx=new Date(d.getFullYear(),d.getMonth(),d.getDate()+1).getTime(),e=Math.min(b,nx);out[iso(d)]=(out[iso(d)]||0)+(e-s)/36e5;s=e}return out}
 /* add (or set) hours for a paper on a day; a day never exceeds 24 hours. Returns true when capped. */
@@ -563,9 +570,21 @@ function addHours(day,p,h,mode){const l=Object.assign({},S.log[day]),cur=+l[p]||
   if(v>0)l[p]=v;else delete l[p];if(Object.keys(l).length)S.log[day]=l;else delete S.log[day];return v<want-1e-9}
 function mmss(ms){const s=Math.floor(ms/1000),h=Math.floor(s/3600),m=Math.floor(s%3600/60),x=s%60;return (h?h+":":"")+String(m).padStart(2,"0")+":"+String(x).padStart(2,"0")}
 function timerHTML(){
-  if(timer){return `<span class="label">Focus · ${esc(paperOf(timer.p).short)}</span><b class="num" id="tElapsed" style="font-size:1.2rem">${mmss(Date.now()-timer.start)}</b><button class="primary" data-act="tstop">Stop and log</button><button class="ghost" data-act="tcancel">Discard</button>`}
-  return `<select id="tPaper" aria-label="Paper for focus timer">${activePapers().map(p=>`<option value="${p.id}">${p.short}</option>`).join("")}</select><button data-act="tstart">Start focus timer</button>`}
-setInterval(()=>{const el=document.getElementById("tElapsed");if(el&&timer)el.textContent=mmss(Date.now()-timer.start)},1000);
+  if(timer){const ch=chRow(timer.cid),pl=+timer.planned||0;return `<div class="grid" style="gap:6px;width:100%">
+    <div class="row between"><span class="label">Focus · ${esc(paperOf(timer.p).short)}${ch?" · "+esc(ch[0].length>48?ch[0].slice(0,46)+"…":ch[0]):""}</span>${timer.taskId?'<span class="chip A">Linked to plan task</span>':""}</div>
+    <div class="row" style="gap:10px"><b class="num" id="tElapsed" style="font-size:1.3rem">${mmss(Date.now()-timer.start)}</b>${pl?`<span class="small muted num">of ${fmtMins(pl)} planned</span>`:""}<span class="small" id="tOver"></span></div>
+    ${pl?`<div class="bar"><i id="tBar" style="width:${Math.min(100,(Date.now()-timer.start)/600/pl)}%"></i></div>`:""}
+    <div class="row"><button class="primary" data-act="tstop">Stop and log</button><button class="ghost" data-act="tcancel">Discard</button></div></div>`}
+  const pid=(activePapers().find(p=>p.id===tForm.p)||activePapers()[0]).id;
+  return `<div class="grid" style="gap:8px;width:100%;grid-template-columns:repeat(auto-fit,minmax(110px,1fr))">
+    <label class="f">Paper<select id="tPaper" data-act="tpaper">${activePapers().map(p=>`<option value="${p.id}" ${p.id===pid?"selected":""}>${p.short}</option>`).join("")}</select></label>
+    <label class="f" style="grid-column:span 2">Chapter (optional)<select id="tCh"><option value="">Any chapter</option>${CH[pid].map(r=>`<option value="${r[3]}" ${r[3]===tForm.cid?"selected":""}>${esc(r[0].length>50?r[0].slice(0,48)+"…":r[0])}</option>`).join("")}</select></label>
+    <label class="f">Planned<select id="tPlan">${[25,45,60,90,120,180].map(m=>`<option value="${m}" ${m===tForm.plan?"selected":""}>${fmtMins(m)}</option>`).join("")}</select></label>
+    <button data-act="tstart" style="align-self:end">Start focus timer</button></div>`}
+let tForm={p:null,cid:"",plan:45};
+setInterval(()=>{if(!timer)return;const el=document.getElementById("tElapsed");if(!el)return;const ms=Date.now()-timer.start;el.textContent=mmss(ms);
+  const pl=+timer.planned||0,bar=document.getElementById("tBar"),ov=document.getElementById("tOver");if(pl&&bar)bar.style.width=Math.min(100,ms/600/pl)+"%";
+  if(pl&&ov)ov.textContent=ms>=pl*60000?"Planned time reached. Stop when you finish.":""},1000);
 
 /* ============ DERIVED ============ */
 function activePapers(){const g=S.settings.groups;return PAPERS.filter(p=>g==="both"||String(p.group)===g)}
@@ -1079,13 +1098,15 @@ function warnings(){
     if(n>=4)out.push({sev:1,paper:p.id,t:`${n} ${p.short} chapters read without question practice`,why:"Reading without solving questions rarely turns into marks.",go:"syllabus"})});
   if(started&&diffDays(plan.start,t)>=6){let wk=0;for(let i=0;i<7;i++)wk+=hoursOn(iso(addDays(t,-i)));const tg=targetSum(addDays(t,-6),t);
     if(tg>0&&wk<tg*.7)out.push({sev:2,paper:null,t:`${wk.toFixed(1)} of ${tg} target hours this week`,why:`That's ${Math.round(wk/tg*100)}% of your target. Missed hours shrink the time left for revision.`,go:"hours"})}
+  const bl=backlogInfo(),dt=Math.round(dayTarget(new Date())*60)||150;if(bl.mins>=dt)out.push({sev:2,paper:null,t:`${fmtMins(bl.mins)} of unfinished work is waiting`,why:`${bl.n} task${bl.n>1?"s":""} from earlier days. At most half of each day goes to carried work, so skip what you no longer need or add study time.`,go:"today"});
   const dueN=jDue().length;if(dueN>=5)out.push({sev:1,paper:null,t:`${dueN} tough topics are due for review`,why:"Reviews left too long need more relearning.",go:"journal"});
   if(plan.valid)milestones(plan).forEach(m=>{const d=diffDays(t,m.d);if(d>=0&&d<=14)out.push({sev:1,paper:null,t:`${m.short} in ${d} day${d===1?"":"s"}`,why:`${fmt(m.d)} (estimated from your first paper; confirm on icai.org)`,go:"plan"})});
   return out.sort((a,b)=>b.sev-a.sev)}
 /* today's priorities: candidate tasks scored from real data; pick the best 3–5 that fit today's hours */
 const DUR={learn:{A:120,B:90,C:60},revise:{A:60,B:45,C:30}};
 function readinessPerChapter(pid,part){const W=CH[pid].reduce((a,r)=>a+(PRI_W[r[1]]||1),0);return r=>Math.round((PRI_W[r[1]]||1)/W*READY_PARTS.find(x=>x[0]===part)[2]*10)/10}
-function priorities(){
+function planKey(x){return x.kind+":"+(x.cid||x.t)}
+function priorities(opts){opts=opts||{};
   const plan=buildPlan(),tt=parse(todayISO()),rd=+S.settings.revDays||21,ps=activePapers(),c=[];
   const cb=plan.valid?currentBlock(plan):null,focus=cb?cb.b.papers:ps.map(p=>p.id),phase=cb?cb.ph.key:1;
   const due=jDue();if(due.length)c.push({score:90+Math.min(due.length,9),paper:null,kind:"Review",t:`Review ${due.length} tough topic${due.length>1?"s":""}`,mins:Math.max(10,due.length*4),why:"They're due today in your spaced-review schedule.",gain:"Keeps hard topics in memory, so you don't have to relearn them later.",go:"journal"});
@@ -1102,19 +1123,24 @@ function priorities(){
   ps.forEach(p=>{const m=mocksFor(p.id),last=m[m.length-1],age=last?diffDays(parse(last.date),tt):null,cov=paperReadiness(p.id).comp.coverage;
     const mockTime=(phase>=3&&focus.includes(p.id)&&(age==null||age>=14))||(age==null&&cov>=.6);
     if(mockTime)c.push({score:age==null?72:75,paper:p.id,kind:"Mock",t:`Write a full ${p.short} mock (3 hours)`,mins:180,why:age==null?`You've covered ${Math.round(cov*100)}% of ${p.short} but haven't written a mock, so its readiness is capped at ${NO_MOCK_CAP}.`:`Your last ${p.short} mock was ${age} days ago.`,gain:"Mocks are 25% of readiness and show exactly where marks are lost.",go:"mocks"})});
+  /* carried-over work replaces fresh suggestions for the same item */
+  const carry=opts.carry||[],excl=opts.exclude||new Set(),ck=new Set(carry.map(x=>x.cid||x.t));
+  for(let i=c.length-1;i>=0;i--){if(excl.has(planKey(c[i]))||ck.has(c[i].cid||c[i].t))c.splice(i,1)}
+  carry.forEach(x=>{if(!excl.has(planKey(x)))c.push(x)});
   /* fill today's target: highest-value tasks first; the last task becomes a partial session if it doesn't fit */
-  const target=Math.round(dayTarget(new Date())*60),big=target>=360,maxN=big?7:5,perCap=big?3:2,kindCap=big?3:2;
-  const SPLIT={Learn:1,Revise:1,Practise:1,Correct:1},pick=[],perPaper={},perKind={},seen=new Set();let left=target;
-  const take=(x,caps)=>{if(left<5&&x.kind!=="Review")return false;const key=x.cid||x.t;if(seen.has(key)||pick.length>=maxN)return false;
+  const full=Math.round(dayTarget(new Date())*60),target=opts.target!=null?opts.target:full,big=full>=360,maxN=(big?7:5)-(opts.fixed||0),perCap=big?3:2,kindCap=big?3:2,carryMax=opts.carryMax!=null?opts.carryMax:Infinity;
+  const SPLIT={Learn:1,Revise:1,Practise:1,Correct:1},pick=[],perPaper={},perKind={},seen=new Set();let left=target,carryUsed=0;
+  const take=(x,caps,anyBudget)=>{if(left<5&&x.kind!=="Review")return false;const key=x.cid||x.t;if(seen.has(key)||pick.length>=maxN)return false;
     if(caps){if(x.paper&&x.kind!=="Mock"&&(perPaper[x.paper]||0)>=perCap)return false;if(x.kind!=="Review"&&(perKind[x.kind]||0)>=kindCap)return false}
-    let m=x.mins,part=false;
-    if(m>left){if(!SPLIT[x.kind]||left<20)return false;m=Math.max(20,Math.floor(left/5)*5);part=true}
-    pick.push(Object.assign({},x,{mins:m,full:x.mins,part}));seen.add(key);left-=m;if(x.paper)perPaper[x.paper]=(perPaper[x.paper]||0)+1;perKind[x.kind]=(perKind[x.kind]||0)+1;return true};
+    const room=x.carry&&!anyBudget?Math.min(left,carryMax-carryUsed):left;let m=x.mins,part=false;
+    if(m>room){if(!SPLIT[x.kind]||room<20)return false;m=Math.max(20,Math.floor(room/5)*5);part=true}
+    pick.push(Object.assign({},x,{mins:m,full:x.mins,part}));seen.add(key);left-=m;if(x.carry)carryUsed+=m;if(x.paper)perPaper[x.paper]=(perPaper[x.paper]||0)+1;perKind[x.kind]=(perKind[x.kind]||0)+1;return true};
   c.sort((a,b)=>b.score-a.score);
-  if(target===0){const r=c.find(x=>x.kind==="Review");if(r){pick.push(Object.assign({},r,{full:r.mins,part:false}));left-=r.mins}}
+  if(full===0){const r=c.find(x=>x.kind==="Review");if(r){pick.push(Object.assign({},r,{full:r.mins,part:false}));left-=r.mins}}
   else{
     const rev=c.find(x=>x.kind==="Review");if(rev)take(rev,true);                         /* due reviews are short and come first */
-    const learn=phase===1?c.find(x=>x.kind==="Learn"):null;if(learn)take(learn,true);   /* first reading always gets a slot */
+    c.filter(x=>x.carry).forEach(x=>take(x,true));                                       /* carried work next, by importance, within its half-day budget */
+    const learn=phase===1?c.find(x=>x.kind==="Learn"):null;if(learn)take(learn,true,true);   /* first reading always gets a slot */
     c.forEach(x=>take(x,true));
     if(left>=15)c.forEach(x=>take(x,false));                                              /* relax variety limits if time is left */
     if(left>=15&&ps.length&&pick.length<maxN){                                            /* still time: practise the weakest paper */
@@ -1137,8 +1163,56 @@ function overviewStats(){
     mockAvg:last3.length?last3.reduce((a,m)=>a+pctOf(m),0)/last3.length:null,latest:allM[allM.length-1]||null,overdue,weakCh,R,ready:R.length?Math.round(R.reduce((a,r)=>a+r.score,0)/R.length):0,next:nextPaper()}}
 
 
+/* ============ DAILY PLANNER ============
+   One saved plan per day. Unfinished work is re-checked and carried forward (at most half a day's target);
+   anything older than 14 days expires. Plans are created in memory and saved when you act on them. */
+const CARRY_DAYS=14;
+function stillRelevant(x,d){const c=(x.cid&&S.ch[x.cid])||{};
+  if(x.kind==="Learn")return !c.r;
+  if(x.kind==="Practise")return x.cid?!c.q:false;
+  if(x.kind==="Revise")return !(c.last&&c.last>=d);
+  if(x.kind==="Mock")return !mocksFor(x.paper).some(m=>m.date>=d);
+  return false}
+function carryCandidates(){const t=todayISO(),oldest=iso(addDays(new Date(),-CARRY_DAYS)),map={};let expired=0;
+  Object.keys(S.plan||{}).filter(d=>d<t).sort().forEach(d=>{((S.plan[d]||{}).tasks||[]).forEach(x=>{
+    if(x.carried)return;let left=0,cont=false;
+    if(x.status==="todo"||x.status==="deferred")left=x.mins-(x.doneMins||0);
+    else if(x.status==="done"&&x.part&&x.full>x.mins){left=x.full-x.mins;cont=true}
+    if(left<10)return;if(d<oldest){expired++;return}
+    if(!stillRelevant(Object.assign({created_d:d},x),d))return;
+    const age=diffDays(parse(d),parse(t));
+    map[planKey(x)]=Object.assign({},x,{from:d,srcId:x.id,mins:left,full:left,part:false,carry:true,cont,
+      score:(x.score||60)+10+Math.min(10,age*2)+(x.status==="deferred"?5:0),
+      t:cont&&x.kind==="Learn"?x.t.replace(/^Read /,"Continue reading "):x.t,
+      why:`Carried over from ${fmtShort(parse(d))}${cont?", continuing where you stopped":""}. ${x.why||""}`.trim()})})});
+  return {list:Object.values(map),expired}}
+function ensurePlan(force){const d=todayISO();if(!isObj(S.plan))S.plan={};const ex=S.plan[d];
+  if(ex&&!force)return ex;
+  Object.keys(S.plan).forEach(k=>{if(k<d)(S.plan[k].tasks||[]).forEach(x=>{if(x.movedTo===d){delete x.carried;delete x.movedTo}})});
+  const keep=ex?ex.tasks.filter(x=>x.status!=="todo"||(x.doneMins||0)>0):[];
+  const target=Math.round(dayTarget(new Date())*60),used=keep.filter(x=>x.status!=="skipped"&&x.status!=="deferred").reduce((a,x)=>a+x.mins,0);
+  const cc=carryCandidates();
+  const P=priorities({target:Math.max(0,target-used),exclude:new Set(keep.map(planKey)),carry:cc.list,carryMax:Math.round(target*.5),fixed:keep.length});
+  const stamp=Date.now().toString(36);
+  const tasks=keep.concat(P.list.map((x,i)=>({id:"t"+stamp+i,kind:x.kind,paper:x.paper||null,cid:x.cid||null,t:x.t,mins:x.mins,full:x.full||x.mins,part:!!x.part,
+    score:Math.round(x.score),level:x.level,why:x.why||"",gain:x.gain||"",go:x.go||null,status:"todo",doneMins:0,carry:!!x.carry,from:x.from||null})));
+  P.list.forEach(x=>{if(x.srcId&&S.plan[x.from]){const src=S.plan[x.from].tasks.find(y=>y.id===x.srcId);if(src){src.carried=true;src.movedTo=d}}});
+  S.plan[d]={created:Date.now(),target,tasks,expired:cc.expired};
+  return S.plan[d]}
+function planTask(id){const p=S.plan&&S.plan[todayISO()];return p?p.tasks.find(x=>x.id===id):null}
+/* finishing a task updates the matching record elsewhere */
+function completeTask(x){x.status="done";let msg="Done";
+  if(x.kind==="Learn"&&x.cid&&!x.part){setStage(x.cid,"r",true);msg="Done. Chapter marked as read in Syllabus."}
+  else if(x.kind==="Learn"&&x.part)msg="Done for today. The rest of this chapter is carried to tomorrow.";
+  else if(x.kind==="Revise"&&x.cid){const c=S.ch[x.cid]||{},nx=!c.r1?"r1":!c.r2?"r2":!c.r3?"r3":null;if(nx){setStage(x.cid,nx,true);msg=`Done. Recorded as ${STAGES.find(y=>y[0]===nx)[1]} in Syllabus.`}else{touch(x.cid,"rev");msg="Done. Revision date updated in Syllabus."}}
+  else if(x.kind==="Practise"&&x.cid){setStage(x.cid,"q",true);msg="Done. Questions ticked in Syllabus."}
+  else if(x.kind==="Mock")msg="Done. Add the score in Mocks so readiness can use it.";
+  return msg}
+function backlogInfo(){const T=(S.plan&&S.plan[todayISO()]||{tasks:[]}).tasks,inPlan=new Set(T.map(planKey)),bl=carryCandidates().list.filter(x=>!inPlan.has(planKey(x)));
+  return {n:bl.length,mins:bl.reduce((a,x)=>a+x.mins,0)}}
+
 /* ============ COMMAND CENTRE (Today) ============ */
-let PRI=[], warnAll=false, readyOpen=null;
+let warnAll=false, readyOpen=null;
 function commandStrip(O){const pc=v=>Math.round(v*100)+"%",[bd]=readinessBand(O.ready);
   const tile=(href,label,val,sub)=>`<a class="tile" href="#${href}"><span class="label">${label}</span><b>${val}</b><span class="sub">${sub}</span></a>`;
   return `<div class="tiles" aria-label="Preparation overview">
@@ -1152,18 +1226,24 @@ function commandStrip(O){const pc=v=>Math.round(v*100)+"%",[bd]=readinessBand(O.
     ${tile("plan","Next paper",O.next?diffDays(new Date(),parse(O.next.date))+"<span class=\"small muted\"> days</span>":"–",O.next?O.next.p.short+" · "+fmtShort(parse(O.next.date)):"no upcoming paper")}
   </div>`}
 function fmtMins(m){m=Math.round(m);const h=Math.floor(m/60),r=m%60;return h?(r?`${h} h ${r} min`:`${h} h`):`${r} min`}
-function priText(x){return `${x.paper?paperOf(x.paper).short+": ":""}${x.t} (${x.part?fmtMins(x.mins)+" of "+fmtMins(x.full):fmtMins(x.mins)})`}
-function prioritiesCard(P){const tasks=S.todos[todayISO()]||[],has=x=>tasks.some(t=>t.t===priText(x));
-  return `<div class="card"><div class="row between"><div class="label">Today's priorities</div><span class="small ${Math.abs(P.mins-P.target)<=10?"":"muted"}">${P.target===0?"No study target today":`${fmtMins(P.mins)} planned · today's target ${fmtMins(P.target)}`}</span></div>
-    ${P.list.length?P.list.map((x,i)=>`<div class="pri">
-      <div class="row between"><span class="row" style="gap:8px"><span class="kind">${x.kind}</span>${x.paper?`<span class="chip"><span class="swatch" style="background:${col(x.paper)}"></span>${paperOf(x.paper).short}</span>`:""}<span class="small ${x.level==="High"?"sev3":x.level==="Medium"?"sev2":"sev1"}">${x.level}</span></span><span class="num small muted">${fmtMins(x.mins)}</span></div>
-      <b>${esc(x.t)}</b>${x.part?`<span class="small sev2">Partial session: ${fmtMins(x.mins)} of about ${fmtMins(x.full)} today. Continue tomorrow.</span>`:""}
-      <span class="small"><span class="muted">Why:</span> ${esc(x.why)}</span>
-      <span class="small"><span class="muted">Benefit:</span> ${esc(x.gain)}</span>
-      <div class="row">${has(x)?'<span class="chip A">In today\'s tasks</span>':`<button data-act="priadd" data-i="${i}">Add to today's tasks</button>`}${x.go?`<a class="small" style="color:var(--accent)" href="#${x.go}">Open ${x.go==="journal"?"Tough topics":x.go==="evaluate"?"Evaluate":"Mocks"}</a>`:""}</div>
-    </div>`).join(""):`<p class="small muted" style="margin:0">Nothing to suggest yet. Tick chapters in Syllabus and log your study, and priorities will appear here.</p>`}
-    ${P.list.length>1&&P.list.some(x=>!has(x))?`<div class="row"><button class="primary" data-act="priall">Add all to today's tasks</button></div>`:""}
-    <p class="small muted" style="margin:0">Picked from your revision dates, confidence ratings, unread chapters in your focus block, question practice, mocks, evaluations and tough topics, and planned to fill today's target (weekday ${S.settings.tWd} h, weekend ${S.settings.tWe} h). Durations are estimates: reading a chapter about 1–2 h, revising 30–60 min, question practice 1 h, a mock 3 h.</p>
+function planCard(pl){const T=pl.tasks,active=T.filter(x=>x.status!=="skipped"&&x.status!=="deferred"),plannedM=active.reduce((a,x)=>a+x.mins,0),
+  doneM=active.reduce((a,x)=>a+(x.status==="done"?x.mins:Math.min(x.mins,x.doneMins||0)),0),bl=backlogInfo(),run=timer&&timer.taskId;
+  const st={done:'<span class="chip A">Done</span>',skipped:'<span class="chip">Skipped</span>',deferred:'<span class="chip warn">Moved to tomorrow</span>'};
+  return `<div class="card"><div class="row between"><div class="label">Today's plan</div><span class="small muted">${pl.target===0?"No study target today":`${fmtMins(plannedM)} planned · ${fmtMins(doneM)} done · target ${fmtMins(pl.target)}`}</span></div>
+    ${pl.target?`<div class="bar" aria-label="Plan progress"><i style="width:${Math.min(100,doneM/Math.max(1,pl.target)*100)}%"></i></div>`:""}
+    ${T.length?T.map(x=>{const open=x.status==="todo",running=run===x.id;return `<div class="pri" style="${open?"":"opacity:.75"}">
+      <div class="row between"><span class="row" style="gap:8px"><span class="kind">${x.kind}</span>${x.paper?`<span class="chip"><span class="swatch" style="background:${col(x.paper)}"></span>${paperOf(x.paper).short}</span>`:""}<span class="small ${x.level==="High"?"sev3":x.level==="Medium"?"sev2":"sev1"}">${x.level||""}</span>${x.carry?`<span class="chip warn" title="Carried over">from ${fmtShort(parse(x.from))}</span>`:""}</span><span class="num small muted">${fmtMins(x.mins)}</span></div>
+      <b style="${x.status==="done"?"text-decoration:line-through":""}">${esc(x.t)}</b>
+      ${x.part?`<span class="small sev2">Partial session: ${fmtMins(x.mins)} of about ${fmtMins(x.full)} today. The rest is carried to tomorrow.</span>`:""}
+      ${open&&x.doneMins?`<span class="small">${fmtMins(x.doneMins)} of ${fmtMins(x.mins)} done with the focus timer</span>`:""}
+      ${open?`<span class="small"><span class="muted">Why:</span> ${esc(x.why)}</span>${x.gain?`<span class="small"><span class="muted">Benefit:</span> ${esc(x.gain)}</span>`:""}`:""}
+      <div class="row">${open?(running?'<span class="chip A">Timer running</span>':`<button class="primary" data-act="ptstart" data-id="${x.id}">Start</button>`)+`<button data-act="ptdone" data-id="${x.id}">Done</button><button class="ghost" data-act="ptskip" data-id="${x.id}">Skip</button><button class="ghost" data-act="ptdefer" data-id="${x.id}">Tomorrow</button>`
+        :`${st[x.status]||""}<button class="ghost" data-act="ptreopen" data-id="${x.id}">${x.status==="done"?"Reopen":"Restore"}</button>`}${x.go&&open?`<a class="small" style="color:var(--accent)" href="#${x.go}">Open ${x.go==="journal"?"Tough topics":x.go==="evaluate"?"Evaluate":"Mocks"}</a>`:""}</div>
+    </div>`}).join(""):`<p class="small muted" style="margin:0">Nothing to plan yet. Tick chapters in Syllabus and log your study, and tasks will appear here.</p>`}
+    ${bl.n?`<p class="small" style="margin:0"><span class="chip warn">Backlog</span> ${bl.n} unfinished task${bl.n>1?"s":""} (${fmtMins(bl.mins)}) from earlier days ${bl.n>1?"are":"is"} waiting. Carried work takes at most half of each day.</p>`:""}
+    ${pl.expired?`<p class="small muted" style="margin:0">${pl.expired} task${pl.expired>1?"s":""} older than ${CARRY_DAYS} days expired. If still relevant, they come back as fresh suggestions.</p>`:""}
+    <div class="row"><button data-act="ptrebuild">Rebuild today's plan</button><span class="small muted">Keeps finished, skipped and started tasks; re-plans the rest from your latest data.</span></div>
+    <p class="small muted" style="margin:0">Planned to fill today's target (weekday ${S.settings.tWd} h, weekend ${S.settings.tWe} h). Done updates Syllabus: Read ticks the chapter, Revise records the next revision stage, Practise ticks Questions. Unfinished tasks are re-checked tomorrow.</p>
   </div>`}
 function warningsCard(W){const sevL={3:"Urgent",2:"Important",1:"Heads-up"},shown=warnAll?W:W.slice(0,6);
   return `<div class="card"><div class="row between"><div class="label">Warnings</div><span class="small muted">${W.length?W.length+" active":"all clear"}</span></div>
@@ -1205,10 +1285,10 @@ V.today=()=>{
   due.sort((a,b)=>b.age-a.age);
   const todos=S.todos[t]||[];
   const daysLeft=diffDays(new Date(),parse(examStart()));
-  const O=overviewStats(),Wn=warnings(),P=priorities();PRI=P.list;
+  const O=overviewStats(),PL=ensurePlan(),Wn=warnings();
   return `
   ${commandStrip(O)}
-  <div class="grid g2">${prioritiesCard(P)}${warningsCard(Wn)}</div>
+  <div class="grid g2">${planCard(PL)}${warningsCard(Wn)}</div>
   ${readinessCard(O.R)}
   <div class="grid g2">
     <div class="card hero">
@@ -1237,8 +1317,8 @@ V.today=()=>{
   ${journeyCard()}
   <div class="grid g2">
     <div class="card">
-      <div class="row between"><div class="label">Today's tasks</div><span class="small muted">${todos.filter(x=>x.done).length}/${todos.length}</span></div>
-      <ul class="list">${todos.map((x,i)=>`<li class="${x.done?"done":""}"><label><input type="checkbox" class="chk" data-act="todo" data-i="${i}" ${x.done?"checked":""}><span>${esc(x.t)}</span></label><button class="ghost" data-act="deltodo" data-i="${i}" aria-label="Delete task">×</button></li>`).join("")||`<li class="muted small">No tasks yet. Add 3–5 concrete ones, such as “Ind AS 116: 6 PYQs”.</li>`}</ul>
+      <div class="row between"><div class="label">Your own tasks</div><span class="small muted">${todos.filter(x=>x.done).length}/${todos.length}</span></div>
+      <ul class="list">${todos.map((x,i)=>`<li class="${x.done?"done":""}"><label><input type="checkbox" class="chk" data-act="todo" data-i="${i}" ${x.done?"checked":""}><span>${esc(x.t)}</span></label><button class="ghost" data-act="deltodo" data-i="${i}" aria-label="Delete task">×</button></li>`).join("")||`<li class="muted small">Anything not in today's plan, such as “Ind AS 116: 6 PYQs” or “Coaching class 6–8 pm”.</li>`}</ul>
       <form class="row" id="todoForm"><input id="todoIn" placeholder="Add a task for today" style="flex:1"><button class="primary">Add</button></form>
     </div>
   </div>
@@ -1340,6 +1420,14 @@ V.hours=()=>{
   const wk=sum(addDays(t,-6),t), mo=sum(addDays(t,-29),t), all=Object.keys(S.log).reduce((a,k)=>a+hoursOn(k),0);
   const per=activePapers().map(p=>({p,h:Object.values(S.log).reduce((a,l)=>a+(+l[p.id]||0),0)})), mx=Math.max(1,...per.map(x=>x.h));
   const t7=targetSum(addDays(t,-6),t);
+  const SS=(S.sessions||[]).slice().sort((a,b)=>b.start-a.start),todayS=SS.filter(x=>iso(new Date(x.start))===todayISO()),wkS=SS.filter(x=>x.start>=addDays(t,-6).setHours(0,0,0,0));
+  const withPlan=wkS.filter(x=>x.planned>0),hitPlan=withPlan.filter(x=>x.mins>=x.planned*.9).length,avgLen=wkS.length?wkS.reduce((a,x)=>a+x.mins,0)/wkS.length:0;
+  const sessCard=`<div class="card"><div class="row between"><div class="label">Focus sessions</div><span class="small muted">${todayS.length} today · ${fmtMins(todayS.reduce((a,x)=>a+x.mins,0))}</span></div>
+    <div class="row" style="gap:24px"><div class="stat"><span class="label">Last 7 days</span><b>${fmtMins(wkS.reduce((a,x)=>a+x.mins,0))}</b><span class="small muted">${wkS.length} session${wkS.length===1?"":"s"}</span></div>
+      <div class="stat"><span class="label">Average length</span><b>${fmtMins(avgLen)}</b></div>
+      <div class="stat"><span class="label">Reached planned time</span><b>${withPlan.length?hitPlan+" / "+withPlan.length:"–"}</b><span class="small muted">within 10% of plan</span></div></div>
+    ${SS.length?`<div class="tablewrap"><table><tr><th>When</th><th>Paper</th><th>Chapter</th><th class="c">Planned</th><th class="c">Actual</th></tr>${SS.slice(0,15).map(x=>{const ch=chRow(x.cid);return `<tr><td class="num small">${fmtShort(new Date(x.start))} ${new Date(x.start).toTimeString().slice(0,5)}</td><td>${paperOf(x.p)?paperOf(x.p).short:"–"}</td><td class="small">${ch?esc(ch[0]):x.taskId?"Plan task":"–"}</td><td class="c num">${x.planned?fmtMins(x.planned):"–"}</td><td class="c num" style="color:${x.planned&&x.mins<x.planned*.9?"var(--warn)":"inherit"}">${fmtMins(x.mins)}</td></tr>`}).join("")}</table></div>`:`<p class="small muted" style="margin:0">No focus sessions yet. Start the focus timer on Today, or press Start on a plan task.</p>`}
+  </div>`;
   return `
   <h2>Study hours</h2>
   <div class="grid g3">
@@ -1350,6 +1438,7 @@ V.hours=()=>{
   <div class="card"><div class="row between"><div class="label">Last ${weeks} weeks · share of each day's target</div><div class="legend small"><span><i class="swatch" style="background:var(--h1)"></i>&lt;50%</span><span><i class="swatch" style="background:var(--h2)"></i>50–75%</span><span><i class="swatch" style="background:var(--h3)"></i>75–99%</span><span><i class="swatch" style="background:var(--h4)"></i>target hit</span></div></div><div class="heat">${cells}</div></div>
   <div class="grid g2">
     <div class="card"><div class="label">Hours by paper</div>${per.map(x=>`<div class="paperline"><span class="k">${x.p.short}</span><div class="bar"><i style="width:${x.h/mx*100}%;background:${col(x.p.id)}"></i></div><span class="num small">${x.h.toFixed(0)}h</span></div>`).join("")}</div>
+    ${sessCard}
     <div class="card"><div class="label">Log a past day</div>
       <form id="logForm" class="grid" style="grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px">
         <label class="f">Date<input type="date" id="lDate" value="${iso(addDays(t,-1))}" max="${todayISO()}"></label>
@@ -1529,12 +1618,12 @@ function applyBackup(b,reason){takeRestorePoint(reason);
   const jk=new Set(b.journal.map(e=>e.id));J.slice().forEach(e=>{if(!jk.has(e.id))jRemove(e.id)});b.journal.forEach(e=>{if(TOMB[e.id]){delete TOMB[e.id];saveTomb()}jPut(Object.assign({},e))});
   const ek=new Set(b.evals.map(e=>e.id));EV.slice().forEach(e=>{if(!ek.has(e.id))evRemove(e.id)});b.evals.forEach(e=>{if(TOMB[e.id]){delete TOMB[e.id];saveTomb()}evPut(Object.assign({},e))});
   save();render()}
-const RESET_PARTS=[["progress","Syllabus progress, revision history and chapter notes"],["hours","Study hours (and a running timer)"],["mocks","Mock scores"],["evals","Evaluations"],["journal","Tough topics and their review history"],["tasks","Daily tasks"],["checks","Checklists"],["settings","Settings: hours, targets, squad sharing (exam dates and plan start are kept)"]];
+const RESET_PARTS=[["progress","Syllabus progress, revision history and chapter notes"],["hours","Study hours, focus sessions and a running timer"],["mocks","Mock scores"],["evals","Evaluations"],["journal","Tough topics and their review history"],["tasks","Daily plans and your own tasks"],["checks","Checklists"],["settings","Settings: hours, targets, squad sharing (exam dates and plan start are kept)"]];
 function applyReset(parts){takeRestorePoint("Before erasing: "+parts.map(k=>RESET_PARTS.find(x=>x[0]===k)[1].split(/[,:(]/)[0].trim().toLowerCase()).join(", "));
   if(parts.includes("progress"))S.ch={};
-  if(parts.includes("hours")){S.log={};timer=null;store.del(TK)}
+  if(parts.includes("hours")){S.log={};S.sessions=[];timer=null;store.del(TK)}
   if(parts.includes("mocks")){S.mocks=[];mockEdit=null}
-  if(parts.includes("tasks"))S.todos={};
+  if(parts.includes("tasks")){S.todos={};S.plan={}}
   if(parts.includes("checks"))S.checks={};
   if(parts.includes("settings")){const keep={examDates:S.settings.examDates,startDate:S.settings.startDate};S.settings=Object.assign(freshState().settings,keep)}
   if(parts.includes("journal"))J.slice().forEach(e=>jRemove(e.id));
@@ -1687,17 +1776,24 @@ document.addEventListener("click",e=>{
     if(a==="paper"){curPaper=b.dataset.p;render();return}
     if(a==="filter"){chFilter=b.dataset.f;render();return}
     if(a==="conf"){const k=b.dataset.k,n=+b.dataset.n;S.ch[k]=Object.assign({},S.ch[k]);S.ch[k].conf=S.ch[k].conf===n?0:n;save();render();return}
-    if(a==="tstart"){timer={p:document.getElementById("tPaper").value,start:Date.now()};store.set(TK,timer);render();return}
+    if(a==="tstart"){const pp=document.getElementById("tPaper").value,cc=document.getElementById("tCh").value||null,pl=+document.getElementById("tPlan").value||45;tForm={p:pp,cid:cc||"",plan:pl};timer={p:pp,cid:cc,planned:pl,start:Date.now()};store.set(TK,timer);render();return}
+    if(a==="ptstart"){const x=planTask(b.dataset.id);if(!x)return;if(timer){toast("Stop the running timer first");return}timer={p:x.paper||activePapers()[0].id,cid:x.cid||null,planned:Math.max(5,x.mins-(x.doneMins||0)),taskId:x.id,taskDate:todayISO(),start:Date.now()};store.set(TK,timer);save();render();toast("Timer started for this task");return}
+    if(a==="ptdone"){const x=planTask(b.dataset.id);if(!x)return;const msg=completeTask(x);save();render();toast(msg);return}
+    if(a==="ptskip"){const x=planTask(b.dataset.id);if(!x)return;x.status="skipped";save();render();toast("Skipped. It won't be carried forward.");return}
+    if(a==="ptdefer"){const x=planTask(b.dataset.id);if(!x)return;x.status="deferred";save();render();toast("Moved to tomorrow");return}
+    if(a==="ptreopen"){const x=planTask(b.dataset.id);if(!x)return;const was=x.status;x.status="todo";save();render();toast(was==="done"?"Reopened. Any Syllabus tick it made stays; untick it there if needed.":"Restored");return}
+    if(a==="ptrebuild"){ensurePlan(true);save();render();toast("Today's plan rebuilt");return}
     if(a==="tcancel"){timer=null;store.del(TK);render();toast("Timer discarded");return}
     if(a==="tstop"){if(!timer)return;const now=Date.now(),cap=12*36e5,capped=now-timer.start>cap,end=capped?timer.start+cap:now,parts=splitSession(timer.start,end),tot=Object.values(parts).reduce((x,y)=>x+y,0),p=paperOf(timer.p).short;
-      const minsT=Math.floor(tot*60+1e-9);if(minsT>=1)for(const d in parts)addHours(d,timer.p,parts[d]);
+      const minsT=Math.floor(tot*60+1e-9);let taskMsg="";if(minsT>=1){for(const d in parts)addHours(d,timer.p,parts[d]);
+        S.sessions=(S.sessions||[]).concat([{id:"s"+now.toString(36),p:timer.p,cid:timer.cid||null,start:timer.start,end,mins:minsT,planned:+timer.planned||0,taskId:timer.taskId||null}]);
+        if(timer.taskId&&S.plan&&S.plan[timer.taskDate]){const x=S.plan[timer.taskDate].tasks.find(y=>y.id===timer.taskId);if(x){x.doneMins=(x.doneMins||0)+minsT;taskMsg=x.doneMins>=x.mins?". Planned time done, so mark the task Done when you finish":`. ${fmtMins(x.doneMins)} of ${fmtMins(x.mins)} done on this task`}}}
       timer=null;store.del(TK);save();render();
-      toast(capped?`Logged the 12-hour maximum to ${p}. If the timer was left running, correct it in Hours.`:minsT>=1?`Logged ${fmtMins(minsT)} to ${p}${Object.keys(parts).length>1?", split across midnight":""}`:"Under 1 minute, so nothing was logged");return}
+      toast(capped?`Logged the 12-hour maximum to ${p}. If the timer was left running, correct it in Hours.`:minsT>=1?`Logged ${fmtMins(minsT)} to ${p}${Object.keys(parts).length>1?", split across midnight":""}${taskMsg}`:"Under 1 minute, so nothing was logged");return}
     if(a==="delmock"){S.mocks=S.mocks.filter(m=>m.id!==b.dataset.id);if(mockEdit===b.dataset.id)mockEdit=null;save();render();return}
     if(a==="editmock"){mockEdit=b.dataset.id;render();const f=document.getElementById("mockForm");if(f)f.scrollIntoView({block:"center"});return}
     if(a==="mockcancel"){mockEdit=null;render();return}
     if(a==="dismissNotice"){notice("");return}
-    if(a==="priadd"||a==="priall"){const d=todayISO(),L=(S.todos[d]=S.todos[d]||[]),items=a==="priall"?PRI:[PRI[+b.dataset.i]];let n=0;items.forEach(x=>{if(x&&!L.some(t=>t.t===priText(x))){L.push({t:priText(x),done:false});n++}});save();render();toast(n?`Added ${n} task${n>1?"s":""} to today`:"Already in today's tasks");return}
     if(a==="warnall"){warnAll=!warnAll;render();return}
     if(a==="rdy"){readyOpen=readyOpen===b.dataset.p?null:b.dataset.p;render();return}
     if(a==="gotodue"){const el=document.getElementById("dueCard");if(el)el.scrollIntoView({behavior:RM()?"auto":"smooth",block:"start"});return}
@@ -1708,6 +1804,7 @@ document.addEventListener("change",e=>{
   if(a==="stage"){const cl=setStage(b.dataset.k,b.dataset.s,b.checked);save();render();if(cl.length)toast("Later stages were cleared too: "+cl.map(x=>STAGES.find(y=>y[0]===x)[1]).join(", "))}
   if(a==="todo"){S.todos[todayISO()][+b.dataset.i].done=b.checked;save();render()}
   if(a==="jpaper"){const pid=b.value;jPrefill={p:pid,cid:""};const sel=document.getElementById("jCh");if(sel)sel.innerHTML='<option value="">General</option>'+CH[pid].map(c=>`<option value="${c[3]}">${esc(c[0].length>60?c[0].slice(0,58)+"…":c[0])}</option>`).join("");return}
+  if(a==="tpaper"){tForm.p=b.value;tForm.cid="";const sel=document.getElementById("tCh");if(sel)sel.innerHTML='<option value="">Any chapter</option>'+CH[b.value].map(r=>`<option value="${r[3]}">${esc(r[0].length>50?r[0].slice(0,48)+"…":r[0])}</option>`).join("");return}
   if(a==="jclick"){const e=J.find(x=>x.id===b.dataset.id);if(e){e.clicked=b.value;jPut(e)}return}
   if(a==="fill"){const dd=defaultDates(b.value);for(const k in dd){const el=document.getElementById("ex-"+k);if(el)el.value=dd[k]}return}
   if(a==="board"){if(canWrite===false&&b.checked){b.checked=false;toast("Your access doesn't allow joining the board yet. See the note on this page.");return}S.settings.onBoard=b.checked;save();pushBoard();render();return}
