@@ -150,6 +150,7 @@ svg text{fill:var(--muted);font-family:var(--mono);font-size:10px}
       <a href="#journal" data-v="journal">Tough topics</a>
       <a href="#plan" data-v="plan">Timeline</a>
       <a href="#mocks" data-v="mocks">Mocks</a>
+      <a href="#evaluate" data-v="evaluate">Evaluate</a>
       <a href="#hours" data-v="hours">Hours</a>
       <a href="#squad" data-v="squad">Squad</a>
       <a href="#playbook" data-v="playbook">AIR playbook</a>
@@ -345,6 +346,7 @@ async function initSync(){
     myId=id; userNs=user;
     try{amOwner=await user.isOwner()}catch(e){}
     initJournalSync(db,id,user);
+    initEvalSync(db,id);
     examDoc=db.doc("shared/exam");
     examDoc.onSnapshot(sn=>{const d=sn.exists?sn.data():null;sharedExam=d&&d.dates?d:null;render()},()=>{});
     dbRef=db.collection("data/users/"+id).doc("state");
@@ -498,7 +500,7 @@ function initJournalSync(db,id,user){
     if(first){first=false;const remote=new Set(qs.docs.map(d=>d.id));J.filter(x=>!remote.has(x.id)).forEach(x=>{jWrites[x.id]=Promise.resolve().then(()=>jCol.doc(x.id).set({e:JSON.stringify(x),u:x.u||Date.now()})).catch(()=>{})})}
     jSaveLocal(); if(view==="journal"||view==="today")render();
   },()=>{});
-  claude.use("sample").then(s=>{sampleNs=s;if(view==="journal")render()}).catch(()=>{});
+  claude.use("sample").then(s=>{sampleNs=s;if(s)s.limits().then(l=>{sampleLimits=l;if(view==="evaluate")render()}).catch(()=>{});if(view==="journal"||view==="evaluate")render()}).catch(()=>{});
 }
 function jDue(){const t=todayISO();return J.filter(e=>!e.mastered&&e.due<=t)}
 function bankFor(e){const hay=(e.topic+" "+(e.ch>=0&&CH[e.p][e.ch]?CH[e.p][e.ch][0]:"")).toLowerCase();
@@ -623,6 +625,195 @@ function jClick(b){const a=b.dataset.act,id=b.dataset.id,e=id&&J.find(x=>x.id===
   if(a==="tojournal"){jPrefill={p:b.dataset.p,ch:+b.dataset.i};location.hash="journal";setTimeout(()=>{const el=document.getElementById("jT");if(el)el.focus()},50);return true}
   return false}
 
+/* ============ ANSWER SHEET EVALUATOR ============ */
+const EK=LS+".evals";
+let EV=[]; try{EV=JSON.parse(localStorage.getItem(EK)||"[]")}catch(e){}
+let eCol=null, eWrites={}, sampleLimits=null, evRun=null, evOpen=null, evQOpen=null;
+let evFiles={qp:[],sol:[],ans:[]};
+let evForm={paper:"fr",name:"",date:"",max:100,qpText:"",solText:"",note:""};
+const PDFJS="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/";
+function evSaveLocal(){try{localStorage.setItem(EK,JSON.stringify(EV.slice(-15)))}catch(e){}}
+function evPut(e){e.u=Date.now();const i=EV.findIndex(x=>x.id===e.id);if(i<0)EV.push(e);else EV[i]=e;evSaveLocal();
+  if(eCol){const id=e.id,body={e:JSON.stringify(e),u:e.u};eWrites[id]=(eWrites[id]||Promise.resolve()).then(()=>eCol.doc(id).set(body)).catch(()=>{})}}
+function evRemove(id){EV=EV.filter(x=>x.id!==id);evSaveLocal();if(eCol){eWrites[id]=(eWrites[id]||Promise.resolve()).then(()=>eCol.doc(id).delete()).catch(()=>{})}}
+function initEvalSync(db,id){
+  eCol=db.collection("data/users/"+id+"/state/evals");let first=true;
+  eCol.onSnapshot(qs=>{
+    qs.docChanges().forEach(c=>{let r;try{r=JSON.parse(c.doc.data().e)}catch(err){return}
+      const i=EV.findIndex(x=>x.id===r.id);
+      if(c.type==="removed"){if(i>=0)EV.splice(i,1)} else if(i<0)EV.push(r); else if((r.u||0)>(EV[i].u||0))EV[i]=r;});
+    if(first){first=false;const remote=new Set(qs.docs.map(d=>d.id));EV.filter(x=>!remote.has(x.id)).forEach(x=>evPut(x))}
+    EV.sort((a,b)=>(a.created||0)-(b.created||0));evSaveLocal();if(view==="evaluate")render();
+  },()=>{});
+}
+function loadScript(src){return new Promise((res,rej)=>{const s=document.createElement("script");s.src=src;s.onload=res;s.onerror=()=>rej(new Error("Couldn't load the PDF reader"));document.head.appendChild(s)})}
+async function pdfjs(){if(window.pdfjsLib)return window.pdfjsLib;await loadScript(PDFJS+"pdf.worker.min.js");await loadScript(PDFJS+"pdf.min.js");window.pdfjsLib.GlobalWorkerOptions.workerSrc=PDFJS+"pdf.worker.min.js";return window.pdfjsLib}
+function canvasBlob(c,q){return new Promise(r=>c.toBlob(b=>r(b),"image/jpeg",q))}
+async function toJpeg(src,w,h){const max=1800,s=Math.min(1,max/Math.max(w,h));const c=document.createElement("canvas");c.width=Math.round(w*s);c.height=Math.round(h*s);const x=c.getContext("2d");x.fillStyle="#fff";x.fillRect(0,0,c.width,c.height);x.drawImage(src,0,0,c.width,c.height);
+  const lim=(sampleLimits&&sampleLimits.images&&sampleLimits.images.maxInputBytes)||5e6;let q=.82,b=await canvasBlob(c,q);while(b&&b.size>lim&&q>.4){q-=.12;b=await canvasBlob(c,q)}return b}
+async function filePages(f){
+  if(f.type==="application/pdf"||/\.pdf$/i.test(f.name)){
+    const lib=await pdfjs();const doc=await lib.getDocument({data:new Uint8Array(await f.arrayBuffer()),isEvalSupported:false}).promise;const out=[];
+    for(let n=1;n<=doc.numPages;n++){const pg=await doc.getPage(n);const tc=await pg.getTextContent();const text=tc.items.map(i=>i.str+(i.hasEOL?"\n":" ")).join("").replace(/[ \t]+\n/g,"\n").trim();
+      out.push({text,img:async()=>{const v0=pg.getViewport({scale:1}),v=pg.getViewport({scale:Math.min(3,1600/v0.width)});const c=document.createElement("canvas");c.width=v.width;c.height=v.height;await pg.render({canvasContext:c.getContext("2d"),viewport:v}).promise;return toJpeg(c,c.width,c.height)}})}
+    return out}
+  if(f.type.startsWith("image/")){return [{text:"",img:async()=>{let bm;try{bm=await createImageBitmap(f)}catch(e){throw new Error(`Couldn't open ${f.name}. Use JPG or PNG photos, or a PDF.`)}return toJpeg(bm,bm.width,bm.height)}}]}
+  throw new Error(`${f.name} isn't a PDF or image.`)}
+const TPROMPT={
+  qp:"These are pages of a CA Final question paper. Transcribe them exactly: question numbers, sub-parts, marks for each question, instructions (including which questions are compulsory or optional), tables and figures. Output plain text only.",
+  sol:"These are pages of ICAI suggested answers / model answers for a CA Final paper. Transcribe them exactly, keeping question numbers, working notes, tables and conclusions. Output plain text only.",
+  ans:"These are pages of a student's handwritten CA Final answer sheet. Transcribe faithfully, exactly as written: keep the question numbers the student wrote, headings, working notes, journal entries and tables (as simple markdown tables). Do NOT correct any mistakes, spelling or figures. Write [illegible] for parts you can't read and [struck out: ...] for crossed-out text. Start each page with its page marker. Output the transcription only."};
+async function transcribe(blobs,kind,from,total,signal){
+  const r=await sampleNs(`${TPROMPT[kind]}\nThese are pages ${from} to ${from+blobs.length-1} of ${total}. Begin each page with "[Page n]".`,{images:blobs,modelTier:"default",signal,cache:false});
+  if(r.truncated&&blobs.length>1){const h=Math.ceil(blobs.length/2);return (await transcribe(blobs.slice(0,h),kind,from,total,signal))+"\n"+(await transcribe(blobs.slice(h),kind,from+h,total,signal))}
+  return r.text+(r.truncated?"\n[transcription cut short on this page]":"")}
+async function filesToText(files,kind,label,signal){
+  const pages=[];for(const f of files)pages.push(...await filePages(f));
+  if(kind==="ans"&&pages.length>60)throw new Error("The answer sheet has more than 60 pages. Upload one paper at a time.");
+  const out=new Array(pages.length).fill("");const need=[];
+  pages.forEach((p,i)=>{if(kind!=="ans"&&p.text.length>=80)out[i]=`[Page ${i+1}]\n${p.text}`;else need.push(i)});
+  const per=Math.max(1,Math.min(5,(sampleLimits&&sampleLimits.images&&sampleLimits.images.maxCount)||5));
+  for(let k=0;k<need.length;k+=per){const idx=need.slice(k,k+per);step(`Reading ${label}: page${idx.length>1?"s":""} ${idx[0]+1}${idx.length>1?"–"+(idx[idx.length-1]+1):""} of ${pages.length}`);
+    const blobs=[];for(const i of idx)blobs.push(await pages[i].img());
+    const t=await transcribe(blobs,kind,idx[0]+1,pages.length,signal);out[idx[0]]=t;}
+  return {text:out.filter(Boolean).join("\n\n"),pages:pages.length}}
+function step(t){if(!evRun)return;evRun.steps.forEach(s=>{if(s.state==="run")s.state="done"});evRun.steps.push({t,state:"run"});if(view==="evaluate")render()}
+async function runEval(){
+  if(!sampleNs){toast("Evaluation needs the Claude-hosted page");return}
+  if(!evFiles.ans.length){toast("Upload your answer sheet");return}
+  if(!evFiles.qp.length&&!evForm.qpText.trim()){toast("Upload or paste the question paper");return}
+  if(!sampleLimits||!sampleLimits.images){toast("Image upload to Claude isn't available here. Allow it in the page's permissions.");return}
+  const ctrl=new AbortController();evRun={steps:[],ctrl,err:""};const signal=ctrl.signal;render();
+  try{
+    const p=paperOf(evForm.paper);
+    let qp=evForm.qpText.trim(), sol=evForm.solText.trim();
+    if(evFiles.qp.length){step("Reading question paper");const r=await filesToText(evFiles.qp,"qp","question paper",signal);qp=(qp?qp+"\n\n":"")+r.text}
+    if(evFiles.sol.length){step("Reading suggested answers");const r=await filesToText(evFiles.sol,"sol","suggested answers",signal);sol=(sol?sol+"\n\n":"")+r.text}
+    step("Reading your answer sheet");const ar=await filesToText(evFiles.ans,"ans","answer sheet",signal);
+    step("Marking against ICAI standards");
+    const cap=(sampleLimits.maxPromptBytes||262144)-12000, enc=s=>new TextEncoder().encode(s).length;
+    let trimmed=false;const fit=(s,n)=>{if(enc(s)<=n)return s;trimmed=true;let t=s;while(enc(t)>n)t=t.slice(0,Math.floor(t.length*.9));return t+"\n[trimmed to fit]"};
+    const ansT=fit(ar.text,Math.floor(cap*.45)),qpT=fit(qp,Math.floor(cap*.2)),solT=fit(sol,cap-enc(ansT)-enc(qpT));
+    const prompt=`You are a senior ICAI examiner evaluating a CA Final (new scheme) answer script.
+Paper: ${p.name}
+Mock: ${evForm.name||"Mock test"}. Total marks: ${evForm.max}.
+${evForm.note?`Student's note: ${evForm.note}\n`:""}
+HOW TO MARK (follow ICAI evaluation practice):
+- Mark each question and sub-question against the marks shown in the question paper. The total is out of ${evForm.max}.
+- ${sol?"Use the ICAI suggested answers below as the marking scheme. Accept alternative correct approaches and reasonable stated assumptions, as ICAI examiners do.":"No suggested answers were provided: mark from your knowledge of ICAI study material and set confidence to medium or low."}
+- Numerical questions: step marking. Give credit for correct working notes, formulae and intermediate figures. Apply carry-forward: do not penalise the same error twice.
+- Theory and case questions: credit the correct provision (Ind AS / SA / section / rule / clause), its application to the facts, and a clear conclusion. A missing conclusion loses marks. Irrelevant or padded content earns nothing.
+- Optional questions: if the student attempted more than required, mark the attempts in the order they appear and ignore the excess.
+- Presentation: comment on legibility, numbering, working notes and headings.
+- Be strict but fair. When unsure between two marks, give the lower one and say why. Mark only what is in the transcript; [illegible] text earns nothing. Do not invent answers.
+
+QUESTION PAPER:
+${qpT}
+
+${sol?`ICAI SUGGESTED ANSWERS / MARKING SCHEME:\n${solT}\n\n`:""}STUDENT'S ANSWER SHEET (transcribed from handwriting):
+${ansT}
+
+Return ONLY JSON in this shape:
+{"total":number,"max":${evForm.max},"summary":"2-3 sentences on overall performance","confidence":"high|medium|low","questions":[{"q":"1(a)","max":number,"awarded":number,"status":"full|partial|weak|not_attempted","credited":["what earned marks"],"missed":["what lost marks"],"feedback":"2-3 sentences","icai_tip":"how ICAI expects this answer to be written"}],"strengths":["..."],"improvements":["top 5 specific, actionable fixes"],"presentation":"1-2 sentences","time_management":"1 sentence, e.g. unattempted or rushed answers"}
+List every question in the paper, including ones not attempted (awarded 0, status not_attempted).`;
+    const res=await sampleNs.json(prompt,{modelTier:"complex",signal,cache:false});
+    if(!res||!Array.isArray(res.questions))throw {code:"invalid_json"};
+    const qs=res.questions.map(q=>({q:String(q.q||"?"),max:+q.max||0,awarded:Math.max(0,+q.awarded||0),status:String(q.status||"partial"),credited:(q.credited||[]).map(String),missed:(q.missed||[]).map(String),feedback:String(q.feedback||""),icai_tip:String(q.icai_tip||"")}));
+    const total=Math.min(+evForm.max,+res.total||qs.reduce((a,q)=>a+q.awarded,0));
+    const ev={id:"e"+Date.now().toString(36),created:Date.now(),paper:evForm.paper,name:evForm.name||"Mock test",date:evForm.date||todayISO(),max:+evForm.max,hasSol:!!sol,pages:ar.pages,trimmed,
+      result:{total:Math.round(total*2)/2,summary:String(res.summary||""),confidence:String(res.confidence||"medium"),questions:qs,strengths:(res.strengths||[]).map(String),improvements:(res.improvements||[]).map(String),presentation:String(res.presentation||""),time:String(res.time_management||"")},
+      transcript:ar.text.slice(0,120000)};
+    evPut(ev);evOpen=ev.id;evRun=null;evFiles={qp:[],sol:[],ans:[]};render();window.scrollTo(0,0);toast("Evaluation ready");
+  }catch(err){const c=err&&err.code;
+    if(c==="cancelled"){evRun=null;render();toast("Evaluation stopped");return}
+    const msg=c==="not_granted"?"Claude access was declined for this page. Allow it in the page's permissions and try again."
+      :c==="rate_limited"?"You've hit Claude's usage limit for now. Try again later."
+      :c==="prompt_too_large"?"The papers are too long to mark in one go. Upload one section at a time."
+      :c==="image_rejected"?"One of the pages couldn't be read. Use clear JPG or PNG photos, or a PDF."
+      :c==="invalid_json"?"Claude's marking came back incomplete. Try again."
+      :(err&&err.message)||"Something went wrong. Try again.";
+    if(evRun){evRun.steps.forEach(s=>{if(s.state==="run")s.state="err"});evRun.err=msg}render()}
+}
+function evStatusChip(s){return s==="full"?'<span class="chip A">full</span>':s==="partial"?'<span class="chip warn">partial</span>':s==="not_attempted"?'<span class="chip">not attempted</span>':'<span class="chip bad">weak</span>'}
+function evResult(ev){const r=ev.result,pct=ev.max?r.total/ev.max*100:0;
+  return `<div class="card hero">
+    <div class="row between"><div class="row"><span class="chip"><span class="swatch" style="background:${col(ev.paper)}"></span>${paperOf(ev.paper).short}</span><b>${esc(ev.name)}</b><span class="small muted">${fmt(ev.date)} · ${ev.pages} page${ev.pages===1?"":"s"}</span></div><button class="ghost" data-act="evclose">Close</button></div>
+    <div class="row" style="gap:28px">
+      <div class="stat"><span class="label">Estimated marks</span><b>${r.total}<span class="small muted"> / ${ev.max}</span></b></div>
+      <div class="stat"><span class="label">Percentage</span><b style="color:${pct>=60?"var(--good)":pct>=40?"var(--warn)":"var(--bad)"}">${pct.toFixed(0)}%</b></div>
+      <div class="stat"><span class="label">Confidence</span><b style="font-size:1.1rem">${esc(r.confidence)}</b><span class="small muted">${ev.hasSol?"marked against suggested answers":"no suggested answers given"}</span></div>
+    </div>
+    <p style="margin:0">${esc(r.summary)}</p>
+    ${ev.trimmed?'<p class="small" style="margin:0;color:var(--warn)">Some text was trimmed to fit. Marks for the last questions may be less reliable.</p>':""}
+    <div class="row">
+      ${ev.savedMock?'<span class="chip A">Saved to Mocks</span>':`<button class="primary" data-act="evmock" data-id="${ev.id}">Save ${r.total}/${ev.max} to Mocks</button>`}
+      ${(()=>{const n=r.questions.filter(q=>q.status==="partial"||q.status==="weak").length;return ev.addedTough?'<span class="chip A">Added to Tough topics</span>':n?`<button data-act="evtough" data-id="${ev.id}">Add ${n} weak answer${n>1?"s":""} to Tough topics</button>`:""})()}
+    </div>
+  </div>
+  <div class="tablewrap"><table><tr><th>Q</th><th class="c">Marks</th><th class="c">Status</th><th>Feedback</th><th></th></tr>
+    ${r.questions.map((q,i)=>{const k=ev.id+"-"+i,o=evQOpen===k;return `<tr><td class="num"><b>${esc(q.q)}</b></td><td class="c num">${q.awarded} / ${q.max}</td><td class="c">${evStatusChip(q.status)}</td><td class="small">${esc(q.feedback)}
+      ${o?`<div class="prose small" style="margin-top:8px;max-width:none">${q.credited.length?`<p><b>Earned marks for:</b></p><ul>${q.credited.map(x=>`<li>${esc(x)}</li>`).join("")}</ul>`:""}${q.missed.length?`<p><b>Lost marks for:</b></p><ul>${q.missed.map(x=>`<li>${esc(x)}</li>`).join("")}</ul>`:""}${q.icai_tip?`<p><b>How ICAI expects it:</b> ${esc(q.icai_tip)}</p>`:""}</div>`:""}</td>
+      <td><button class="ghost" data-act="evq" data-k="${k}">${o?"Less":"Details"}</button></td></tr>`}).join("")}
+  </table></div>
+  <div class="grid g2">
+    <div class="card"><div class="label">Fix these first</div><ol class="small" style="margin:0;padding-left:1.2rem;display:grid;gap:6px">${r.improvements.map(x=>`<li>${esc(x)}</li>`).join("")}</ol>${r.time?`<p class="small" style="margin:0"><b>Time:</b> ${esc(r.time)}</p>`:""}</div>
+    <div class="card"><div class="label">What went well</div><ul class="small" style="margin:0;padding-left:1.2rem;display:grid;gap:6px">${r.strengths.map(x=>`<li>${esc(x)}</li>`).join("")}</ul>${r.presentation?`<p class="small" style="margin:0"><b>Presentation:</b> ${esc(r.presentation)}</p>`:""}</div>
+  </div>
+  <details class="pw"><summary>What Claude read from your answer sheet</summary><p class="small muted" style="margin:0 0 8px">Check it read your handwriting correctly. Misread figures can cost marks here that an examiner would give.</p><pre style="white-space:pre-wrap;font-family:var(--mono);font-size:.78rem;margin:0;max-height:420px;overflow:auto">${esc(ev.transcript)}</pre></details>`}
+V.evaluate=()=>{
+  const ps=activePapers();if(!ps.some(p=>p.id===evForm.paper))evForm.paper=ps[0].id;
+  const open=evOpen&&EV.find(e=>e.id===evOpen);
+  const fileList=k=>evFiles[k].length?`<div class="row small">${evFiles[k].map((f,i)=>`<span class="chip">${esc(f.name.length>28?f.name.slice(0,26)+"…":f.name)}<button class="ghost" style="padding:0 2px" data-act="evrmf" data-k="${k}" data-i="${i}" aria-label="Remove ${esc(f.name)}">×</button></span>`).join("")}</div>`:"";
+  const canRun=!!sampleNs;
+  let prog="";
+  if(evRun){prog=`<div class="card"><div class="row between"><div class="label">Evaluating</div>${evRun.err?`<button data-act="evdismiss">Back to the form</button>`:`<button data-act="evstop">Stop</button>`}</div>
+    <ul class="list small">${evRun.steps.map(s=>`<li><span class="chip ${s.state==="done"?"A":s.state==="err"?"bad":"warn"}">${s.state==="done"?"done":s.state==="err"?"stopped":"working"}</span><span>${esc(s.t)}</span></li>`).join("")}</ul>
+    ${evRun.err?`<p class="small" style="margin:0;color:var(--bad)">${esc(evRun.err)}</p>`:`<p class="small muted" style="margin:0">A full answer sheet takes a few minutes. Keep this tab open.</p>`}</div>`}
+  return `
+  <div class="row between"><h2>Evaluate a mock</h2><span class="small muted">Claude marks your answer sheet the way ICAI examiners do</span></div>
+  ${open?evResult(open):""}
+  ${prog}
+  ${!evRun?`<div class="grid g2">
+    <div class="card"><div class="label">1 · About the mock</div>
+      <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px">
+        <label class="f">Paper<select id="evP" data-act="evf" data-f="paper">${ps.map(p=>`<option value="${p.id}" ${p.id===evForm.paper?"selected":""}>${p.short}</option>`).join("")}</select></label>
+        <label class="f">Date written<input type="date" id="evD" data-act="evf" data-f="date" value="${evForm.date||todayISO()}"></label>
+        <label class="f">Total marks<input type="number" id="evM" data-act="evf" data-f="max" min="1" value="${evForm.max}"></label>
+        <label class="f" style="grid-column:1/-1">Name<input id="evN" data-act="evf" data-f="name" value="${esc(evForm.name)}" placeholder="ICAI MTP Series I, May 2027"></label>
+        <label class="f" style="grid-column:1/-1">Anything Claude should know (optional)<input id="evNote" data-act="evf" data-f="note" value="${esc(evForm.note)}" placeholder="Attempted Q1–Q5; Q6 left for time"></label>
+      </div></div>
+    <div class="card"><div class="label">2 · Question paper (required)</div>
+      <label class="f">Upload a PDF or photos<input type="file" id="evQP" data-act="evfile" data-k="qp" multiple accept="application/pdf,image/*"></label>${fileList("qp")}
+      <label class="f">…or paste the questions<textarea id="evQPT" rows="3" data-act="evf" data-f="qpText" placeholder="Paste question text here">${esc(evForm.qpText)}</textarea></label></div>
+    <div class="card"><div class="label">3 · ICAI suggested answers (recommended)</div>
+      <label class="f">Upload a PDF or photos<input type="file" id="evSol" data-act="evfile" data-k="sol" multiple accept="application/pdf,image/*"></label>${fileList("sol")}
+      <label class="f">…or paste them<textarea id="evSolT" rows="3" data-act="evf" data-f="solText" placeholder="Paste the suggested answers here">${esc(evForm.solText)}</textarea></label>
+      <p class="small muted" style="margin:0">With ICAI's suggested answers, Claude marks against the official scheme and the marks are much more reliable.</p></div>
+    <div class="card"><div class="label">4 · Your answer sheet (required)</div>
+      <label class="f">Scanned PDF or page photos, in order<input type="file" id="evAns" data-act="evfile" data-k="ans" multiple accept="application/pdf,image/*"></label>${fileList("ans")}
+      <p class="small muted" style="margin:0">Scan in good light, flat and upright, one page per photo. Up to 60 pages. A free scanner app works best.</p></div>
+  </div>
+  <div class="row">${canRun?`<button class="primary" data-act="evrun">Evaluate my answer sheet</button>`:`<span class="small muted">Evaluation works on the Claude-hosted page while you're signed in.</span>`}<span class="small muted">Your files are sent to Claude only to mark this mock and aren't stored. The marks, feedback and transcript are saved privately for you.</span></div>`:""}
+  ${EV.length?`<div class="label">Past evaluations</div><div class="tablewrap"><table><tr><th>Date</th><th>Paper</th><th>Mock</th><th class="c">Marks</th><th></th></tr>${EV.slice().reverse().map(e=>`<tr><td class="num small">${fmt(e.date)}</td><td>${paperOf(e.paper).short}</td><td class="small">${esc(e.name)}</td><td class="c num">${e.result.total}/${e.max}</td><td><button class="ghost" data-act="evopen" data-id="${e.id}">View</button><button class="ghost danger" data-act="evdel" data-id="${e.id}" aria-label="Delete evaluation">×</button></td></tr>`).join("")}</table></div>`:""}
+  <p class="small muted" style="margin:0">Marks are an estimate. ICAI's actual evaluation can differ, especially when no suggested answers are given or handwriting is hard to read.</p>`;
+};
+function evClick(b){const a=b.dataset.act,id=b.dataset.id,ev=id&&EV.find(x=>x.id===id);
+  if(a==="evrun"){runEval();return true}
+  if(a==="evstop"){if(evRun)evRun.ctrl.abort();return true}
+  if(a==="evdismiss"){evRun=null;render();return true}
+  if(a==="evrmf"){evFiles[b.dataset.k].splice(+b.dataset.i,1);render();return true}
+  if(a==="evopen"){evOpen=id;evQOpen=null;render();window.scrollTo(0,0);return true}
+  if(a==="evclose"){evOpen=null;render();return true}
+  if(a==="evq"){evQOpen=evQOpen===b.dataset.k?null:b.dataset.k;render();return true}
+  if(a==="evdel"){evRemove(id);if(evOpen===id)evOpen=null;render();toast("Evaluation deleted");return true}
+  if(a==="evmock"&&ev){S.mocks.push({id:Date.now().toString(36),paper:ev.paper,date:ev.date,score:ev.result.total,max:ev.max,src:"Claude-evaluated · "+ev.name});ev.savedMock=true;evPut(ev);save();render();toast("Saved to Mocks");return true}
+  if(a==="evtough"&&ev){ev.result.questions.filter(q=>q.status==="partial"||q.status==="weak").forEach((q,i)=>{const miss=q.missed[0]||q.feedback;jPut({id:"j"+Date.now().toString(36)+i,p:ev.paper,ch:-1,topic:`${ev.name} Q${q.q}: ${miss.length>90?miss.slice(0,88)+"…":miss}`,kind:"Mock mistake",why:q.missed.join("; ")+(q.icai_tip?" | ICAI: "+q.icai_tip:""),created:todayISO(),box:0,due:iso(addDays(new Date(),1)),reviews:[],mastered:false,clicked:"",card:null})});ev.addedTough=true;evPut(ev);render();toast("Added to Tough topics");return true}
+  return false}
+function evChange(b){const a=b.dataset.act;
+  if(a==="evfile"){evFiles[b.dataset.k].push(...Array.from(b.files||[]));render();return true}
+  if(a==="evf"){evForm[b.dataset.f]=b.dataset.f==="max"?(+b.value||100):b.value;return true}
+  return false}
+
 /* ============ VIEWS ============ */
 V.today=()=>{
   const plan=buildPlan(), cb=currentBlock(plan), t=todayISO(), hrs=hoursOn(t), tgt=dayTarget(new Date()), we=isWeekend(new Date());
@@ -740,7 +931,7 @@ V.mocks=()=>{
   const grp=g=>{const s=stats.filter(x=>x.p.group===g&&x.last!=null);if(!s.length)return null;const tot=s.reduce((a,b)=>a+b.last,0);return {n:s.length,agg:tot/s.length,min:Math.min(...s.map(x=>x.last))}};
   const groupCard=g=>{const r=grp(g);if(!r)return"";const pass=r.min>=40&&r.agg>=50;return `<div class="stat"><span class="label">Group ${g===1?"I":"II"} (latest)</span><b>${r.agg.toFixed(1)}%</b><span class="small ${pass?"":"muted"}" style="color:${pass?"var(--good)":"var(--bad)"}">${pass?"Pass pace":"Below pass rule"} · lowest ${r.min.toFixed(0)}</span></div>`};
   return `
-  <div class="row between"><h2>Mock tests</h2><span class="small muted">Target for a rank: ${tp}%+ in every paper</span></div>
+  <div class="row between"><h2>Mock tests</h2><div class="row"><span class="small muted">Target for a rank: ${tp}%+ in every paper</span><a class="btn" href="#evaluate" style="text-decoration:none">Have Claude mark an answer sheet</a></div></div>
   <div class="grid g2">
     <div class="card"><div class="label">Trend</div>${chart}</div>
     <div class="card"><div class="label">Add a score</div>
@@ -973,6 +1164,7 @@ document.addEventListener("click",e=>{
   const b=e.target.closest("[data-act]");
   if(b){const a=b.dataset.act;
     if(jClick(b))return;
+    if(evClick(b))return;
     if(a==="hr"){const t=todayISO();S.log[t]=S.log[t]||{};S.log[t][b.dataset.p]=Math.max(0,(+S.log[t][b.dataset.p]||0)+ +b.dataset.d);save();render();return}
     if(a==="deltodo"){S.todos[todayISO()].splice(+b.dataset.i,1);save();render();return}
     if(a==="touch"){touch(b.dataset.k);save();render();toast("Marked as revised today");return}
@@ -992,7 +1184,7 @@ document.addEventListener("click",e=>{
   if(id==="importBk"){try{const o=JSON.parse(document.getElementById("bkText").value);if(!o||!o.settings)throw 0;const jj=Array.isArray(o.journal)?o.journal:null;delete o.journal;S=load(o);save();if(jj){jj.forEach(e=>jPut(e))}render();toast("Backup restored")}catch(err){toast("That text isn't a valid backup. Paste the full copied text.")}}
 });
 document.addEventListener("change",e=>{
-  const b=e.target.closest("[data-act]");if(!b)return;const a=b.dataset.act;
+  const b=e.target.closest("[data-act]");if(!b)return;if(evChange(b))return;const a=b.dataset.act;
   if(a==="stage"){const k=b.dataset.k;S.ch[k]=Object.assign({},S.ch[k],{[b.dataset.s]:b.checked});touch(k);save();render()}
   if(a==="todo"){S.todos[todayISO()][+b.dataset.i].done=b.checked;save();render()}
   if(a==="jpaper"){const pid=b.value;jPrefill={p:pid,ch:-1};const sel=document.getElementById("jCh");if(sel)sel.innerHTML='<option value="-1">General</option>'+CH[pid].map((c,i)=>`<option value="${i}">${esc(c[0].length>60?c[0].slice(0,58)+"…":c[0])}</option>`).join("");return}
