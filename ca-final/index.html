@@ -150,6 +150,7 @@ svg text{fill:var(--muted);font-family:var(--mono);font-size:10px}
       <a href="#plan" data-v="plan">Timeline</a>
       <a href="#mocks" data-v="mocks">Mocks</a>
       <a href="#hours" data-v="hours">Hours</a>
+      <a href="#squad" data-v="squad">Squad</a>
       <a href="#playbook" data-v="playbook">AIR playbook</a>
       <a href="#checklists" data-v="checklists">Checklists</a>
       <a href="#setup" data-v="setup">Setup</a>
@@ -307,13 +308,15 @@ function esc(s){return String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&l
 
 function freshState(){
   return {v:1, updatedAt:0,
-    settings:{examDate:"2027-05-01", startDate:todayISO(), groups:"both", target:10, revDays:21, targetPct:75},
+    settings:{examDate:"2027-05-01", startDate:todayISO(), groups:"both", tWd:2.5, tWe:8, revDays:21, targetPct:75, onBoard:true},
     ch:{}, log:{}, mocks:[], checks:{}, todos:{}};
 }
 let S = freshState();
-try{const raw=localStorage.getItem(LS); if(raw){S=Object.assign(freshState(),JSON.parse(raw));}}catch(e){}
+function load(o){const f=freshState();const x=Object.assign(f,o);x.settings=Object.assign(freshState().settings,o.settings||{});return x}
+try{const raw=localStorage.getItem(LS); if(raw){S=load(JSON.parse(raw));}}catch(e){}
 
 let dbRef=null, writing=false, dirty=false, lastSent="", saveTimer=null;
+let boardCol=null, myId=null, userNs=null, board=[], boardReady=false, lastBoard="", boardErr="", names={};
 function save(){
   S.updatedAt=Date.now();
   try{localStorage.setItem(LS,JSON.stringify(S))}catch(e){}
@@ -323,7 +326,7 @@ async function flush(){
   if(!dbRef||writing||!dirty) return;
   writing=true; dirty=false;
   const s=JSON.stringify(S); lastSent=s;
-  try{await dbRef.set({s, t:S.updatedAt}); setSync(true,"Synced to your account")}
+  try{await dbRef.set({s, t:S.updatedAt}); setSync(true,"Synced to your account"); pushBoard()}
   catch(e){setSync(false,"Sync failed, saved on this device")}
   writing=false; if(dirty) flush();
 }
@@ -335,20 +338,58 @@ async function initSync(){
     const [db,user]=await Promise.all([claude.use("db"),claude.use("user")]);
     if(!db||!user) return;
     const id=await user.id(); if(!id) return;
+    myId=id; userNs=user;
     dbRef=db.collection("data/users/"+id).doc("state");
     const snap=await dbRef.get();
     if(snap.exists){
       const d=snap.data();
-      if(d && d.s && (d.t||0)>=(S.updatedAt||0)){ S=Object.assign(freshState(),JSON.parse(d.s)); try{localStorage.setItem(LS,d.s)}catch(e){} render(); }
+      if(d && d.s && (d.t||0)>=(S.updatedAt||0)){ S=load(JSON.parse(d.s)); try{localStorage.setItem(LS,d.s)}catch(e){} render(); }
       else { dirty=true; flush(); }
     } else if(S.updatedAt){ dirty=true; flush(); }
     setSync(true,"Synced to your account");
     dbRef.onSnapshot(sn=>{
       if(!sn.exists) return; const d=sn.data(); if(!d||!d.s||d.s===lastSent) return;
-      if((d.t||0)>(S.updatedAt||0)){ S=Object.assign(freshState(),JSON.parse(d.s)); lastSent=d.s; try{localStorage.setItem(LS,d.s)}catch(e){} render(); }
+      if((d.t||0)>(S.updatedAt||0)){ S=load(JSON.parse(d.s)); lastSent=d.s; try{localStorage.setItem(LS,d.s)}catch(e){} render(); }
     },()=>setSync(false,"Offline, saved on this device"));
+    boardCol=db.collection("board");
+    boardCol.onSnapshot(qs=>{
+      board=qs.docs.map(d=>Object.assign({},d.data(),{id:d.id}));
+      if(!boardReady){boardReady=true;const mine=board.find(b=>b.id===myId);
+        if(mine){const o=Object.assign({},mine);delete o.id;delete o.t;lastBoard=stable(o)}else if(!S.settings.onBoard)lastBoard="off";
+        pushBoard();}
+      if(view==="squad"||view==="today")render();
+    },()=>{});
+    if(view==="squad")render();
   }catch(e){ dbRef=null; }
 }
+
+function stable(o){if(o===null||typeof o!=="object")return JSON.stringify(o);return "{"+Object.keys(o).sort().map(k=>JSON.stringify(k)+":"+stable(o[k])).join(",")+"}"}
+function summary(){const days={};for(let i=0;i<14;i++){const k=iso(addDays(new Date(),-i));const h=hoursOn(k);if(h)days[k]=Math.round(h*100)/100}
+  const lat=activePapers().map(p=>{const m=S.mocks.filter(x=>x.paper===p.id).sort((a,b)=>a.date<b.date?-1:1);return m.length?m[m.length-1].score/m[m.length-1].max*100:null}).filter(x=>x!=null);
+  return {days,pct:Math.round(overall()*100),streak:streak(),mockAvg:lat.length?Math.round(lat.reduce((a,b)=>a+b,0)/lat.length):null,mocks:S.mocks.length,exam:S.settings.examDate,tWd:+S.settings.tWd,tWe:+S.settings.tWe}}
+let boardBusy=false;
+async function pushBoard(){
+  if(!boardCol||!myId||!boardReady||boardBusy)return; boardBusy=true;
+  try{
+    if(!S.settings.onBoard){if(lastBoard!=="off"){await boardCol.doc(myId).delete();lastBoard="off"}}
+    else{const sm=summary(),j=stable(sm);if(j!==lastBoard){await boardCol.doc(myId).set(Object.assign(sm,{t:Date.now()}));lastBoard=j}}
+    boardErr="";
+  }catch(e){boardErr=(e&&e.code)||"error"}
+  boardBusy=false;
+}
+function refreshNames(ids){if(!userNs||!ids.length)return;userNs.profiles(ids).then(ps=>{let ch=false;ids.forEach(id=>{const n=(ps[id]&&ps[id].name)||"";if(names[id]!==n){names[id]=n;ch=true}});if(ch&&view==="squad")render()}).catch(()=>{})}
+function squadRows(){const now=new Date(),t=todayISO(),y=iso(addDays(now,-1));
+  return board.map(b=>{const days=b.days||{};let tw=0;for(let i=0;i<7;i++){const d=addDays(now,-i);tw+=(d.getDay()===0||d.getDay()===6)?(+b.tWe||0):(+b.tWd||0)}
+    const wk=weekHrs(days,now);return Object.assign({},b,{wk,tw,today:+(days[t]||0),st:(days[t]||days[y])?(b.streak||0):0})}).sort((a,b)=>b.wk-a.wk||b.pct-a.pct)}
+function myRankChip(){if(!boardCol||board.length<2)return "";const r=squadRows(),i=r.findIndex(x=>x.id===myId);if(i<0)return "";return `<div class="row"><span class="chip A">Squad #${i+1} of ${r.length} this week</span><a href="#squad" class="small" style="color:var(--accent)">See the board</a></div>`}
+function hitDays(n){let c=0;for(let i=0;i<n;i++){const d=addDays(new Date(),-i);const tg=dayTarget(d);if(tg>0&&hoursOn(iso(d))>=tg)c++}return c}
+/* focus timer (kept on this device) */
+const TK=LS+".timer"; let timer=null; try{timer=JSON.parse(localStorage.getItem(TK)||"null")}catch(e){}
+function mmss(ms){const s=Math.floor(ms/1000),h=Math.floor(s/3600),m=Math.floor(s%3600/60),x=s%60;return (h?h+":":"")+String(m).padStart(2,"0")+":"+String(x).padStart(2,"0")}
+function timerHTML(){
+  if(timer){return `<span class="label">Focus · ${esc(paperOf(timer.p).short)}</span><b class="num" id="tElapsed" style="font-size:1.2rem">${mmss(Date.now()-timer.start)}</b><button class="primary" data-act="tstop">Stop and log</button><button class="ghost" data-act="tcancel">Discard</button>`}
+  return `<select id="tPaper" aria-label="Paper for focus timer">${activePapers().map(p=>`<option value="${p.id}">${p.short}</option>`).join("")}</select><button data-act="tstart">Start focus timer</button>`}
+setInterval(()=>{const el=document.getElementById("tElapsed");if(el&&timer)el.textContent=mmss(Date.now()-timer.start)},1000);
 
 /* ============ DERIVED ============ */
 function activePapers(){const g=S.settings.groups;return PAPERS.filter(p=>g==="both"||String(p.group)===g)}
@@ -359,6 +400,12 @@ function paperProgress(pid){const list=CH[pid];return list.reduce((a,_,i)=>a+chP
 function overall(){const ps=activePapers();return ps.reduce((a,p)=>a+paperProgress(p.id),0)/ps.length}
 function hoursOn(day){const l=S.log[day]||{};return Object.values(l).reduce((a,b)=>a+(+b||0),0)}
 function streak(){let n=0,d=new Date();if(hoursOn(iso(d))===0)d=addDays(d,-1);while(hoursOn(iso(d))>0){n++;d=addDays(d,-1)}return n}
+function isWeekend(d){const g=d.getDay();return g===0||g===6}
+function dayTarget(d){return +(isWeekend(d)?S.settings.tWe:S.settings.tWd)||0}
+function targetSum(from,to){let a=0;for(let d=new Date(from);d<=to;d=addDays(d,1))a+=dayTarget(d);return a}
+function hoursLeft(){const e=addDays(parse(S.settings.examDate),-1),t=parse(todayISO());const done=hoursOn(todayISO());return Math.max(0,targetSum(t,e)-Math.min(done,dayTarget(t)))}
+function expectedPct(plan){const t=parse(todayISO());const base={1:[0,.55],2:[.55,.2],3:[.75,.15],4:[.9,.1]};for(const ph of plan.phases){if(t>=ph.start&&t<ph.end){const n=+ph.name.match(/Phase (\d)/)[1];const f=diffDays(ph.start,t)/Math.max(1,diffDays(ph.start,ph.end));const [b,w]=base[n];return b+w*f}}return t>=plan.exam?1:0}
+function weekHrs(days,ref){let a=0;for(let i=0;i<7;i++)a+=+(days[iso(addDays(ref,-i))]||0);return a}
 function paperOf(id){return PAPERS.find(p=>p.id===id)}
 function col(p){return `var(${paperOf(p).color})`}
 
@@ -386,7 +433,7 @@ function currentBlock(plan){const t=parse(todayISO());for(const ph of plan.phase
 /* ============ VIEWS ============ */
 const V={};
 V.today=()=>{
-  const plan=buildPlan(), cb=currentBlock(plan), t=todayISO(), hrs=hoursOn(t), tgt=+S.settings.target||8;
+  const plan=buildPlan(), cb=currentBlock(plan), t=todayISO(), hrs=hoursOn(t), tgt=dayTarget(new Date()), we=isWeekend(new Date());
   const due=[];activePapers().forEach(p=>CH[p.id].forEach((c,i)=>{const s=chState(p.id,i);if(s.r&&s.last&&diffDays(parse(s.last),new Date())>=+S.settings.revDays)due.push({p,c,i,s,age:diffDays(parse(s.last),new Date())});else if(s.r&&s.conf&&s.conf<=2)due.push({p,c,i,s,age:s.last?diffDays(parse(s.last),new Date()):0,weak:true})}));
   due.sort((a,b)=>b.age-a.age);
   const todos=S.todos[t]||[];
@@ -400,14 +447,17 @@ V.today=()=>{
       <div class="row" style="gap:24px">
         <div class="stat"><span class="label">Syllabus done</span><b>${Math.round(overall()*100)}%</b></div>
         <div class="stat"><span class="label">Streak</span><b>${streak()}<span class="small muted"> days</span></b></div>
-        <div class="stat"><span class="label">Weeks left</span><b>${Math.max(0,Math.floor(daysLeft/7))}</b></div>
+        <div class="stat"><span class="label">Study hours left</span><b>${Math.round(hoursLeft())}</b></div>
       </div>
+      ${(()=>{if(daysLeft<0)return"";const exp=expectedPct(plan),act=overall(),gap=Math.round((exp-act)*100);return gap<=2?`<div class="row"><span class="chip A">On track</span><span class="small muted">Plan expects ${Math.round(exp*100)}% by today. You're at ${Math.round(act*100)}%.</span></div>`:`<div class="row"><span class="chip ${gap>10?"bad":"warn"}">${gap}% behind plan</span><span class="small muted">Plan expects ${Math.round(exp*100)}% by today. Tick chapters in Syllabus as you finish them.</span></div>`})()}
+      ${myRankChip()}
     </div>
     <div class="card">
-      <div class="row between"><div class="label">Hours today</div><span class="num">${hrs.toFixed(1)} / ${tgt} h</span></div>
+      <div class="row between"><div class="label">Hours today · ${we?"weekend":"weekday"} target</div><span class="num">${hrs.toFixed(1)} / ${tgt} h</span></div>
       <div class="bar"><i style="width:${Math.min(100,hrs/tgt*100)}%"></i></div>
       <div class="quick">${activePapers().map(p=>`<div class="q"><span class="row" style="gap:6px"><span class="swatch" style="background:${col(p.id)}"></span>${p.short}</span><span class="row" style="gap:2px"><button class="ghost" data-act="hr" data-p="${p.id}" data-d="-0.5" aria-label="Remove half hour ${p.short}">−</button><b>${((S.log[t]||{})[p.id]||0).toFixed(1)}</b><button class="ghost" data-act="hr" data-p="${p.id}" data-d="0.5" aria-label="Add half hour ${p.short}">+</button></span></div>`).join("")}</div>
-      <p class="small muted" style="margin:0">Tap + for every 30 minutes of focused study.</p>
+      <div class="row" style="border-top:1px solid var(--line);padding-top:10px">${timerHTML()}</div>
+      <p class="small muted" style="margin:0">Tap + for every 30 minutes, or run the focus timer and it logs the time when you stop.</p>
     </div>
   </div>
   <div class="grid g2">
@@ -467,10 +517,11 @@ V.plan=()=>{
   ];
   return `
   <div class="row between"><h2>Your timeline</h2><span class="small muted num">${fmt(S.settings.startDate)} to ${fmt(S.settings.examDate)} · ${total} days</span></div>
+  ${(()=>{const H=Math.round(targetSum(plan.start,addDays(plan.exam,-1)));return `<div class="card hero"><div class="row" style="gap:24px"><div class="stat"><span class="label">Study hours in this plan</span><b>${H} h</b></div><div class="stat"><span class="label">Weekday / weekend</span><b>${S.settings.tWd} / ${S.settings.tWe} h</b></div></div>${H<1000?`<p class="small" style="margin:0"><span class="chip warn">Tight</span> Most rankers put in roughly 1,200–1,800 hours for both groups. Add hours on holidays and in the final 6 weeks (study leave), or move your attempt, to close the gap.</p>`:`<p class="small muted" style="margin:0">That's a solid budget. Protect it.</p>`}</div>`})()}
   <div class="card"><div class="gantt">${rows.join("")}</div><div class="legend">${activePapers().map(p=>`<span><span class="swatch" style="background:${col(p.id)}"></span>${p.short}</span>`).join("")}<span><span class="swatch" style="background:var(--bad)"></span>Today</span></div></div>
   <div class="grid g2">
     <div class="card"><div class="label">Phases</div>
-      ${plan.phases.map(ph=>{const isCur=t>=ph.start&&t<ph.end;return `<div class="phase ${isCur?"cur":""}"><h3>${esc(ph.name)} ${isCur?'<span class="chip bad">now</span>':""}</h3><span class="num small muted">${fmtShort(ph.start)} to ${fmtShort(addDays(ph.end,-1))} · ${diffDays(ph.start,ph.end)} days</span><p class="small" style="margin:0">${esc(ph.desc)}</p><div class="row small">${ph.blocks.map(b=>`<span class="chip"><span class="swatch" style="background:${col(b.papers[0])}"></span>${esc(b.label)} · ${diffDays(b.start,b.end)}d</span>`).join("")}</div></div>`}).join("")||`<p class="muted">Set a start date before your exam date in Setup.</p>`}
+      ${plan.phases.map(ph=>{const isCur=t>=ph.start&&t<ph.end;return `<div class="phase ${isCur?"cur":""}"><h3>${esc(ph.name)} ${isCur?'<span class="chip bad">now</span>':""}</h3><span class="num small muted">${fmtShort(ph.start)} to ${fmtShort(addDays(ph.end,-1))} · ${diffDays(ph.start,ph.end)} days</span><p class="small" style="margin:0">${esc(ph.desc)}</p><div class="row small">${ph.blocks.map(b=>`<span class="chip"><span class="swatch" style="background:${col(b.papers[0])}"></span>${esc(b.label)} · ${diffDays(b.start,b.end)}d · ${Math.round(targetSum(b.start,addDays(b.end,-1)))}h</span>`).join("")}</div></div>`}).join("")||`<p class="muted">Set a start date before your exam date in Setup.</p>`}
     </div>
     <div class="card"><div class="label">Key milestones (estimated)</div>
       <div class="tablewrap"><table>${ms.map(([d,txt])=>`<tr><td class="num small" style="white-space:nowrap">${fmtShort(d)}</td><td class="small">${txt} ${d<t?'<span class="chip">past</span>':""}</td></tr>`).join("")}</table></div>
@@ -519,19 +570,19 @@ V.mocks=()=>{
 
 V.hours=()=>{
   const weeks=18, t=new Date(), end=addDays(t,6-((t.getDay()+6)%7)), start=addDays(end,-weeks*7+1);
-  let cells="";for(let i=0;i<weeks*7;i++){const d=addDays(start,i),k=iso(d),h=hoursOn(k);const l=h===0?"":h<3?"l1":h<6?"l2":h<9?"l3":"l4";cells+=`<i class="${l} ${k===todayISO()?"today":""}" title="${fmtShort(d)}: ${h.toFixed(1)} h" style="${d>t?"opacity:.35":""}"></i>`}
+  let cells="";for(let i=0;i<weeks*7;i++){const d=addDays(start,i),k=iso(d),h=hoursOn(k);const tg=dayTarget(d)||1,r=h/tg;const l=h===0?"":r<.5?"l1":r<.75?"l2":r<1?"l3":"l4";cells+=`<i class="${l} ${k===todayISO()?"today":""}" title="${fmtShort(d)}: ${h.toFixed(1)} h" style="${d>t?"opacity:.35":""}"></i>`}
   const sum=(from,to)=>{let a=0;for(let d=new Date(from);d<=to;d=addDays(d,1))a+=hoursOn(iso(d));return a};
   const wk=sum(addDays(t,-6),t), mo=sum(addDays(t,-29),t), all=Object.keys(S.log).reduce((a,k)=>a+hoursOn(k),0);
   const per=activePapers().map(p=>({p,h:Object.values(S.log).reduce((a,l)=>a+(+l[p.id]||0),0)})), mx=Math.max(1,...per.map(x=>x.h));
-  const t7=Math.round((+S.settings.target||8)*7);
+  const t7=targetSum(addDays(t,-6),t);
   return `
   <h2>Study hours</h2>
   <div class="grid g3">
-    <div class="card"><div class="stat"><span class="label">Last 7 days</span><b>${wk.toFixed(1)} h</b><span class="small muted">target ${t7} h</span></div><div class="bar"><i style="width:${Math.min(100,wk/t7*100)}%"></i></div></div>
+    <div class="card"><div class="stat"><span class="label">Last 7 days</span><b>${wk.toFixed(1)} h</b><span class="small muted">target ${t7} h · ${hitDays(7)} of 7 days on target</span></div><div class="bar"><i style="width:${Math.min(100,wk/t7*100)}%"></i></div></div>
     <div class="card"><div class="stat"><span class="label">Last 30 days</span><b>${mo.toFixed(1)} h</b><span class="small muted">${(mo/30).toFixed(1)} h per day</span></div></div>
     <div class="card"><div class="stat"><span class="label">All time</span><b>${all.toFixed(0)} h</b><span class="small muted">streak ${streak()} days</span></div></div>
   </div>
-  <div class="card"><div class="row between"><div class="label">Last ${weeks} weeks</div><div class="legend small"><span>0</span><span><i class="swatch" style="background:var(--h1)"></i>&lt;3</span><span><i class="swatch" style="background:var(--h2)"></i>3–6</span><span><i class="swatch" style="background:var(--h3)"></i>6–9</span><span><i class="swatch" style="background:var(--h4)"></i>9+ h</span></div></div><div class="heat">${cells}</div></div>
+  <div class="card"><div class="row between"><div class="label">Last ${weeks} weeks · share of each day's target</div><div class="legend small"><span><i class="swatch" style="background:var(--h1)"></i>&lt;50%</span><span><i class="swatch" style="background:var(--h2)"></i>50–75%</span><span><i class="swatch" style="background:var(--h3)"></i>75–99%</span><span><i class="swatch" style="background:var(--h4)"></i>target hit</span></div></div><div class="heat">${cells}</div></div>
   <div class="grid g2">
     <div class="card"><div class="label">Hours by paper</div>${per.map(x=>`<div class="paperline"><span class="k">${x.p.short}</span><div class="bar"><i style="width:${x.h/mx*100}%;background:${col(x.p.id)}"></i></div><span class="num small">${x.h.toFixed(0)}h</span></div>`).join("")}</div>
     <div class="card"><div class="label">Log a past day</div>
@@ -604,6 +655,26 @@ V.playbook=()=>`
     <li><b>21:00–22:00</b> Revise today's notes plus anything overdue from the Today tab. Plan tomorrow's tasks.</li>
   </ul><p class="small muted">Adjust to your rhythm. The point is two papers in parallel and daily writing practice.</p></div></details>`;
 
+V.squad=()=>{
+  const invite=`<div class="card"><div class="label">Add friends to compete</div><div class="prose small">
+    <p>1. Open this page on claude.ai and click <b>Share</b>.</p>
+    <p>2. Invite each friend by email and give them access that lets them <b>use</b> the page (Contributor). View-only friends can see the board but can't join it.</p>
+    <p>3. They open the link signed in to Claude, set their own exam date and hours, and start ticking. They appear here automatically.</p>
+    <p class="muted">Only a summary is shared: hours for the last 14 days, streak, syllabus %, mock average and exam date. Checklists, notes and to-dos stay private to each person.</p></div></div>`;
+  if(!boardCol) return `<h2>Squad</h2><div class="card"><p style="margin:0">The squad board needs the Claude-hosted version of this page, opened while signed in to Claude. In a plain browser copy, your progress stays on this device only.</p></div>${invite}`;
+  const rows=squadRows(); refreshNames(rows.map(r=>r.id));
+  const leader=rows[0];
+  return `
+  <div class="row between"><h2>Squad</h2><label class="row small" style="gap:6px"><input type="checkbox" class="chk" data-act="board" ${S.settings.onBoard?"checked":""}> Show me on the board</label></div>
+  ${boardErr?`<div class="card"><p class="small" style="margin:0;color:var(--warn)">Your summary couldn't be posted (${esc(boardErr)}). Ask the page owner for Contributor access.</p></div>`:""}
+  ${rows.length?`<div class="tablewrap"><table><tr><th class="c">#</th><th>Name</th><th class="c">Today</th><th class="c">Last 7 days</th><th class="c">Of target</th><th class="c">Streak</th><th class="c">Syllabus</th><th class="c">Mock avg</th><th>Exam</th></tr>
+    ${rows.map((r,i)=>{const pc=r.tw?Math.round(r.wk/r.tw*100):0;return `<tr><td class="c num">${i+1}</td><td>${esc(names[r.id]||"Someone")} ${r.id===myId?'<span class="chip A">you</span>':""}</td><td class="c num">${r.today.toFixed(1)}h</td><td class="c num"><b>${r.wk.toFixed(1)}h</b></td><td class="c num" style="color:${pc>=100?"var(--good)":pc>=75?"inherit":"var(--warn)"}">${pc}%</td><td class="c num">${r.st}d</td><td class="c num">${r.pct}%</td><td class="c num">${r.mockAvg==null?"–":r.mockAvg+"%"}</td><td class="small num">${r.exam?fmtShort(parse(r.exam)):"–"}</td></tr>`}).join("")}
+  </table></div>
+  <p class="small muted" style="margin:0">Ranked by hours in the last 7 days. "Of target" compares each person with their own weekday and weekend targets, so different schedules compete fairly.${leader&&leader.wk>0?" Leader this week: "+esc(names[leader.id]||"Someone")+".":""}</p>`
+  :`<div class="card"><p class="muted" style="margin:0">Nobody is on the board yet. Log some hours and you'll appear here.</p></div>`}
+  ${invite}`;
+};
+
 const CHECKS = {
   "Eligibility & registration":[
     ["el1","Articleship completed, or will be by the eligibility cut-off for this attempt"],
@@ -654,7 +725,8 @@ V.setup=()=>`
         <label class="f">Paper 1 exam date<input type="date" id="sExam" value="${S.settings.examDate}"></label>
         <label class="f">Plan start date<input type="date" id="sStart" value="${S.settings.startDate}"></label>
         <label class="f">Groups<select id="sGroups"><option value="both" ${S.settings.groups==="both"?"selected":""}>Both groups</option><option value="1" ${S.settings.groups==="1"?"selected":""}>Group I only</option><option value="2" ${S.settings.groups==="2"?"selected":""}>Group II only</option></select></label>
-        <label class="f">Daily hours target<input type="number" id="sTarget" min="1" max="16" value="${S.settings.target}"></label>
+        <label class="f">Weekday hours (Mon–Fri)<input type="number" id="sWd" min="0" max="16" step="0.5" value="${S.settings.tWd}"></label>
+        <label class="f">Weekend hours (Sat–Sun)<input type="number" id="sWe" min="0" max="16" step="0.5" value="${S.settings.tWe}"></label>
         <label class="f">Revise after (days)<input type="number" id="sRev" min="5" max="60" value="${S.settings.revDays}"></label>
         <label class="f">Target % per paper<input type="number" id="sPct" min="40" max="100" value="${S.settings.targetPct}"></label>
         <button class="primary" style="grid-column:1/-1">Save settings</button>
@@ -696,6 +768,9 @@ document.addEventListener("click",e=>{
     if(a==="paper"){curPaper=b.dataset.p;render();return}
     if(a==="filter"){chFilter=b.dataset.f;render();return}
     if(a==="conf"){const k=b.dataset.k,n=+b.dataset.n;S.ch[k]=Object.assign({},S.ch[k]);S.ch[k].conf=S.ch[k].conf===n?0:n;touch(k);save();render();return}
+    if(a==="tstart"){timer={p:document.getElementById("tPaper").value,start:Date.now()};try{localStorage.setItem(TK,JSON.stringify(timer))}catch(e){}render();return}
+    if(a==="tcancel"){timer=null;try{localStorage.removeItem(TK)}catch(e){}render();toast("Timer discarded");return}
+    if(a==="tstop"){const h=Math.min(12,(Date.now()-timer.start)/36e5),r=Math.round(h*100)/100,t=todayISO();if(r>=0.02){S.log[t]=S.log[t]||{};S.log[t][timer.p]=Math.round(((+S.log[t][timer.p]||0)+r)*100)/100}const p=paperOf(timer.p).short;timer=null;try{localStorage.removeItem(TK)}catch(e){}save();render();toast(r>=0.02?`Logged ${(r*60).toFixed(0)} min to ${p}`:"Too short to log");return}
     if(a==="delmock"){S.mocks=S.mocks.filter(m=>m.id!==b.dataset.id);save();render();return}
   }
   const id=e.target.id;
@@ -703,12 +778,13 @@ document.addEventListener("click",e=>{
   if(id==="resetNo"){confirmReset=false;render()}
   if(id==="resetYes"){const keep=S.settings;S=freshState();S.settings=keep;confirmReset=false;save();render();toast("All progress erased")}
   if(id==="copyBk"){const txt=JSON.stringify(S);const ta=document.getElementById("bkText");if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(txt).then(()=>toast("Backup copied"),()=>{ta.value=txt;ta.select();toast("Select all and copy the text")})}else{ta.value=txt;ta.select();toast("Select all and copy the text")}}
-  if(id==="importBk"){try{const o=JSON.parse(document.getElementById("bkText").value);if(!o||!o.settings)throw 0;S=Object.assign(freshState(),o);save();render();toast("Backup restored")}catch(err){toast("That text isn't a valid backup. Paste the full copied text.")}}
+  if(id==="importBk"){try{const o=JSON.parse(document.getElementById("bkText").value);if(!o||!o.settings)throw 0;S=load(o);save();render();toast("Backup restored")}catch(err){toast("That text isn't a valid backup. Paste the full copied text.")}}
 });
 document.addEventListener("change",e=>{
   const b=e.target.closest("[data-act]");if(!b)return;const a=b.dataset.act;
   if(a==="stage"){const k=b.dataset.k;S.ch[k]=Object.assign({},S.ch[k],{[b.dataset.s]:b.checked});touch(k);save();render()}
   if(a==="todo"){S.todos[todayISO()][+b.dataset.i].done=b.checked;save();render()}
+  if(a==="board"){S.settings.onBoard=b.checked;save();pushBoard();render();return}
   if(a==="check"){S.checks[b.dataset.k]=b.checked;save();render()}
   if(a==="note"){const k=b.dataset.k;S.ch[k]=Object.assign({},S.ch[k],{note:b.value});save()}
 });
@@ -717,7 +793,7 @@ document.addEventListener("submit",e=>{
   if(f==="todoForm"){const t=v("todoIn").trim();if(!t)return;const d=todayISO();(S.todos[d]=S.todos[d]||[]).push({t,done:false});save();render();document.getElementById("todoIn").focus()}
   if(f==="mockForm"){const sc=parseFloat(v("mScore")),mx=parseFloat(v("mMax"))||100;if(isNaN(sc)||sc<0||sc>mx){toast("Enter marks between 0 and "+mx);return}mockForm.paper=v("mPaper");S.mocks.push({id:Date.now().toString(36),paper:v("mPaper"),date:v("mDate")||todayISO(),score:sc,max:mx,src:v("mSrc").trim()});save();render();toast("Score saved")}
   if(f==="logForm"){const d=v("lDate"),h=parseFloat(v("lHrs"));if(!d||isNaN(h)){toast("Pick a date and enter hours");return}S.log[d]=S.log[d]||{};S.log[d][v("lPaper")]=h;save();render();toast("Hours updated")}
-  if(f==="setForm"){const ex=v("sExam"),st=v("sStart");if(!ex||!st||st>=ex){toast("Start date must be before the exam date");return}Object.assign(S.settings,{examDate:ex,startDate:st,groups:v("sGroups"),target:+v("sTarget")||10,revDays:+v("sRev")||21,targetPct:+v("sPct")||75});save();render();toast("Settings saved")}
+  if(f==="setForm"){const ex=v("sExam"),st=v("sStart");if(!ex||!st||st>=ex){toast("Start date must be before the exam date");return}Object.assign(S.settings,{examDate:ex,startDate:st,groups:v("sGroups"),tWd:+v("sWd")||0,tWe:+v("sWe")||0,revDays:+v("sRev")||21,targetPct:+v("sPct")||75});save();render();toast("Settings saved")}
 });
 
 route();
