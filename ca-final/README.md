@@ -15,6 +15,7 @@ node tests/phase2.test.js
 node tests/phase3.test.js
 node tests/phase4.test.js
 node tests/phase5.test.js
+node tests/phase6.test.js
 ```
 The tests use an in-memory stand-in for the Claude page runtime, so they run offline.
 

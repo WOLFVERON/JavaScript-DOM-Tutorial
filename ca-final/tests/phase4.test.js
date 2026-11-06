@@ -108,7 +108,7 @@ const MOCKS = [
       evOpen = 'e1'; render(); document.querySelector('button[data-act="evmock"]').click();
       const m = S.mocks[S.mocks.length - 1]; return {m, L: mockLost(m)};
     });
-    ok('evaluate → mocks: weak answers become unclassified mistakes with marks lost', r.m.mistakes.length === 2 && r.m.mistakes[0].lost === 8 && r.m.mistakes[1].lost === 15 && r.m.mistakes.every(x => x.cat === 'unclassified'), r.m.mistakes);
+    ok('evaluate → mocks: every lost mark becomes a mistake (unclassified when the evaluation had no types)', r.m.mistakes.length === 3 && r.m.mistakes.map(x => x.lost).join() === '8,15,7' && r.m.mistakes.every(x => x.cat === 'unclassified'), r.m.mistakes);
     ok('evaluate → mocks: unattempted questions and marks recorded', r.m.qUnatt === 1 && r.m.qAtt === 4 && r.m.unattMarks === 20, r.m);
     ok('evaluate → mocks: never more than the marks not scored', r.L.total <= 50, r.L); await p.close();
   }

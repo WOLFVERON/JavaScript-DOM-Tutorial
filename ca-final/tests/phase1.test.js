@@ -26,7 +26,7 @@ function runtime(opts) {
       delete: async () => { delete store[p]; fireDoc(p) },
       onSnapshot: f => { (docSubs[p] = docSubs[p] || []).push(f); setTimeout(() => fireDoc(p), 5); return () => {} }});
     window.__fire = fireCol;
-    const sample = async () => ({text: '[Page 1]\nQ1 answer text', truncated: false});
+    const sample = async () => ({text: '[Page 1]\n### Q1\nQ1 answer text\n### Q2\nQ2 answer text', truncated: false});
     sample.limits = async () => ({maxPromptBytes: 262144, images: {maxCount: 20, maxInputBytes: 5e6, mediaTypes: ['image/jpeg', 'image/png']}, modelTiers: ['default', 'quick']});
     sample.json = async (prompt, o) => { window.__tier = o.modelTier; return opts.evalResult };
     window.claude = {use: async n => n === 'db' ? {collection: c => ({doc: id => doc(c + '/' + id), onSnapshot: f => { (colSubs[c] = colSubs[c] || []).push(f); setTimeout(() => fireCol(c), 5); return () => {} }}), doc}
@@ -171,7 +171,8 @@ const today = new Date(); const ymd = n => { const d = new Date(today); d.setDat
     const p = await open(b, {cloud: true, evalResult: {total: 95, summary: 's', confidence: 'medium', questions: [{q: '1', max: 50, awarded: 70, status: 'full'}, {q: '2', max: 50, awarded: 20, status: 'partial', missed: ['x']}], strengths: [], improvements: []}}, 'evaluate');
     await p.fill('#evQPT', 'Q1 (50 marks) Q2 (50 marks)'); await p.dispatchEvent('#evQPT', 'change');
     await p.setInputFiles('#evAns', png); await p.waitForTimeout(100);
-    await p.click('button[data-act="evrun"]'); await p.waitForSelector('button[data-act="evmock"]', {timeout: 15000}).catch(() => {});
+    await p.click('button[data-act="evrun"]'); await p.waitForSelector('button[data-act="evmark"]', {timeout: 15000}).catch(() => {});
+    await p.click('button[data-act="evmark"]'); await p.waitForSelector('button[data-act="evmock"]', {timeout: 15000}).catch(() => {});
     const r = await p.evaluate(() => ({ev: EV[0] && EV[0].result.total, tier: window.__tier, tr: EV[0] && EV[0].transcript, cloud: Object.keys(window.__db.store).find(k => k.includes('/evals/'))}));
     ok('evaluate: total uses capped question marks (50 + 20)', r.ev === 70, r);
     ok('evaluate: falls back to an available model tier', r.tier === 'default', r.tier);

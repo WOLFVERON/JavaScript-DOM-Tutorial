@@ -1,5 +1,34 @@
 # CA Final Rank Desk: changelog
 
+## Phase 6: Advanced AI answer-sheet evaluator (no data format change; evaluations gain fields)
+
+Restore point: `archive/app-v6-pre-phase6.html`.
+
+- **Two stages with a check in between.** Read: Claude builds a question map from the paper (each question and
+  sub-part, marks, requirement, chapter, optional choices, instructions, and up to 3 ICAI key points), reads the
+  handwriting and labels where each answer starts ("### Q…"). The app splits the answers by question
+  (normalising "Q 1 a", "2.(a)", "6b"; repeated numbers join as continuations). Check: each answer beside its
+  question, editable, with a dropdown to reassign it. Flags: unclear words, uncertain figures, unnumbered or
+  unmatched answers, questions with no answer, gaps in your page numbers, blank pages, text not assigned.
+  The draft is saved so you can come back. Mark: each checked answer is marked against the map.
+- **ICAI-oriented marking**: criteria scores (concepts, provisions, application, calculation, working notes and
+  structure, conclusion: 0–2 or n/a), credited points, missing points, incorrect treatments, carry-forward flag,
+  and every lost mark classified with the Phase 4 mistake types, plus a chapter for each question.
+- **Validation in the app**: question maximums come from the map; unanswered questions score 0; "attempt any N"
+  enforced (later optional answers marked "not counted"); marks capped and the total reconciled; lost marks
+  never exceed max − awarded; unknown mistake types and chapters dropped.
+- **Manual adjustment**: change any question's mark (0 to max, half marks) with a reason; the AI mark is kept and
+  shown; the total and a saved mock update.
+- **Report**: adds criteria chips, incorrect treatments, marks lost by type, reading issues at marking time,
+  priority revision chapters, and "AI-estimated marks, not official ICAI marks".
+- **Links**: Save to Mocks now carries classified mistakes with chapters (the rest as unclassified) and unattempted
+  marks; "Add revision tasks to today's plan" adds the weakest chapters as Revise tasks; tough topics get chapter
+  and main mistake type. Readiness, priorities and suggestions use finished evaluations only.
+- **Fixes**: Claude features now load even when cloud sync isn't available; nested re-renders (an edit followed
+  immediately by a click) are queued instead of erroring; a pending edit in another field is saved before any
+  click or dropdown acts, so late change events can't overwrite newer data.
+- `tests/phase6.test.js`: 34 checks. Earlier evaluator tests updated for the two-stage flow.
+
 ## Phase 5: Adaptive revision and tough topics engine (data version 5)
 
 Restore point: `archive/app-v5-pre-phase5.html`. Data upgrades v4 → v5 automatically; tough topics convert to
