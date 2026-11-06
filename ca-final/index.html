@@ -133,6 +133,20 @@ svg text{fill:var(--muted);font-family:var(--mono);font-size:10px}
 .legend span{display:inline-flex;align-items:center;gap:5px}
 @media (max-width:560px){.paperline{grid-template-columns:4.5rem 1fr 2.8rem}.grow{grid-template-columns:5.5rem 1fr}.count b{font-size:1.25rem}}
 html{overflow-x:hidden}
+.tiles{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+@media (max-width:720px){.tiles{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.tile{display:grid;gap:2px;align-content:start;padding:12px 14px;border:1px solid var(--line);border-radius:10px;background:var(--surface);text-decoration:none;color:inherit;min-width:0}
+a.tile:hover{border-color:var(--accent)}
+.tile b{font-family:var(--mono);font-size:1.35rem;font-variant-numeric:tabular-nums;line-height:1.15}
+.tile .sub{font-size:.75rem;color:var(--muted)}
+.pri,.warn-i{display:grid;gap:4px;padding-block:10px;border-top:1px solid var(--line)}
+.pri:first-of-type,.warn-i:first-of-type{border-top:none;padding-top:0}
+.kind{font-size:.68rem;letter-spacing:.07em;text-transform:uppercase;font-weight:700;color:var(--accent)}
+.sev3{color:var(--bad)}.sev2{color:var(--warn)}.sev1{color:var(--muted)}
+.mini{height:6px;background:var(--sunk);border-radius:99px;overflow:hidden;min-width:48px}.mini i{display:block;height:100%;background:var(--accent)}
+td.rd{min-width:150px}
+.calc{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 14px;font-size:.82rem}
+.calc .num{text-align:right}
 .notice{display:flex;justify-content:space-between;gap:10px;align-items:center;margin-top:12px;padding:10px 12px;border-radius:8px;border:1px solid var(--line);background:var(--surface);font-size:.85rem}
 .notice.warn{border-color:var(--warn)}.notice.bad{border-color:var(--bad)}
 .road{position:relative;height:18px;background:var(--sunk);border-radius:99px;overflow:visible}
@@ -1002,15 +1016,183 @@ function evChange(b){const a=b.dataset.act;
   if(a==="evf"){evForm[b.dataset.f]=b.dataset.f==="max"?(+b.value||100):b.value;return true}
   return false}
 
+
+/* ============ ANALYTICS ============
+   Pure calculations from saved data: no rendering here. Used by the command centre (Today). */
+function milestones(plan){const E=plan.exam,out=[
+    {d:addDays(E,-100),short:"Exam form window usually opens",html:"Exam notification and form window usually opens around here. Fill the form early and check articleship, AICITSS and SPOM eligibility."},
+    {d:addDays(E,-75),short:"RTPs usually released",html:"RTP (Revision Test Papers) usually released. Solve every question, with amendments."},
+    {d:addDays(E,-60),short:"MTP Series I usually released",html:"MTP Series I usually released. Attempt each paper as a full 3-hour test."},
+    {d:addDays(E,-35),short:"MTP Series II usually released",html:"MTP Series II usually released. Second full mock round."},
+    {d:addDays(E,-21),short:"Final revision starts",html:"Final revision starts. No new topics from here."},
+    {d:addDays(E,-14),short:"Admit card usually available",html:"Admit card usually available. Download it and check your photo, signature and centre."}];
+  const ad=activeDates();ad.forEach((x,i)=>{const gap=i?diffDays(parse(ad[i-1].date),parse(x.date)):null;out.push({d:parse(x.date),short:x.p.short+" exam",html:`<b>${esc(x.p.short)} exam</b>${gap!=null?` · ${gap-1} revision day${gap-1===1?"":"s"} before it`:" · first paper"}`})});
+  return out}
+const PRI_W={A:3,B:2,C:1};
+const READY_PARTS=[["coverage","Syllabus coverage",25],["revision","Revision depth and freshness",20],["practice","Question practice",15],["mocks","Mock performance",25],["weak","Weak-topic load",10],["consistency","Study consistency",5]];
+const NO_MOCK_CAP=75;
+function mocksFor(pid){return S.mocks.filter(m=>m.paper===pid).sort((a,b)=>a.date<b.date?-1:a.date>b.date?1:0)}
+function pctOf(m){return m.score/m.max*100}
+function hoursOnPaper(pid,days){const t=new Date();let h=0;for(let i=0;i<days;i++)h+=+((S.log[iso(addDays(t,-i))]||{})[pid]||0);return h}
+function paperWeightShare(pid){const ps=activePapers(),tw=ps.reduce((a,p)=>a+p.w,0);return tw?paperOf(pid).w/tw:0}
+/* readiness 0–100 for one paper, with every input kept for display */
+function paperReadiness(pid){
+  const L=CH[pid],t=parse(todayISO()),rd=+S.settings.revDays||21,tp=+S.settings.targetPct||75;
+  let W=0,readW=0,cov=0,dep=0,fresh=0,prac=0,read=0,weakCh=0,stale=0;
+  L.forEach(r=>{const w=PRI_W[r[1]]||1,c=S.ch[r[3]]||{};W+=w;if(!c.r)return;read++;readW+=w;cov+=w;dep+=w*(c.r3?1:c.r2?.7:c.r1?.4:0);
+    if(c.last&&diffDays(parse(c.last),t)<=rd)fresh+=w;else stale++;if(c.q)prac+=w;if(c.conf&&c.conf<=2)weakCh++});
+  const coverage=W?cov/W:0, depth=W?dep/W:0, freshness=readW?fresh/readW:0, revision=.7*depth+.3*freshness, practice=W?prac/W:0;
+  const ms=mocksFor(pid),last3=ms.slice(-3),mockAvg=last3.length?last3.reduce((a,m)=>a+pctOf(m),0)/last3.length:null,mocks=mockAvg==null?0:Math.min(1,mockAvg/tp);
+  const since=iso(addDays(t,-30)),tt=J.filter(e=>e.p===pid&&!e.mastered).length,forgot=J.filter(e=>e.p===pid).reduce((a,e)=>a+(e.reviews||[]).filter(r=>r.r==="forgot"&&r.d>=since).length,0);
+  const evs=EV.filter(e=>e.paper===pid).slice(-2),evWeak=evs.reduce((a,e)=>a+e.result.questions.filter(q=>q.status==="partial"||q.status==="weak").length,0);
+  const load=weakCh+tt+.5*forgot+.5*evWeak,loadCap=Math.max(4,Math.round(L.length*.4)),weak=Math.max(0,1-load/loadCap)*coverage;
+  const fair=targetSum(addDays(t,-27),t)*paperWeightShare(pid),h28=hoursOnPaper(pid,28),consistency=fair>0?Math.min(1,h28/fair):0;
+  const comp={coverage,revision,practice,mocks,weak,consistency};
+  let raw=READY_PARTS.reduce((a,[k,,w])=>a+comp[k]*w,0);const capped=mockAvg==null&&raw>NO_MOCK_CAP;if(mockAvg==null)raw=Math.min(raw,NO_MOCK_CAP);
+  return {pid,score:Math.round(raw),comp,capped,noMock:mockAvg==null,info:{chapters:L.length,read,depth,freshness,stale,mockAvg,mockN:last3.length,tt,forgot,evWeak,weakCh,load,loadCap,h28,fair}}}
+function readinessBand(sc){return sc>=85?["Exam-ready","A"]:sc>=70?["Strong","A"]:sc>=50?["Solid",""]:sc>=30?["Building","warn"]:["Starting","bad"]}
+/* where the plan expects one paper to be by today (same weights as syllabus progress) */
+function expectedPaper(pid,plan){if(!plan.valid)return 0;const t=parse(todayISO());if(t<plan.start)return 0;if(t>=plan.exam)return 1;
+  const base={1:[0,.55],2:[.55,.2],3:[.75,.15],4:[.9,.1]};let e=S.settings.frDone?.55:0;
+  plan.phases.forEach(ph=>{const [,w]=base[ph.key];if(t>=ph.end){e+=w;return}if(t<ph.start)return;
+    const bl=ph.blocks.filter(b=>b.papers.includes(pid));const tot=bl.reduce((a,b)=>a+diffDays(b.start,b.end),0);if(!tot)return;
+    const done=bl.reduce((a,b)=>a+Math.max(0,Math.min(diffDays(b.start,t),diffDays(b.start,b.end))),0);e+=w*done/tot});
+  return Math.min(1,e)}
+/* warnings, most serious first. sev: 3 urgent, 2 important, 1 heads-up */
+function warnings(){
+  const out=[],plan=buildPlan(),t=parse(todayISO()),ps=activePapers(),rd=+S.settings.revDays||21,started=plan.valid&&t>=plan.start;
+  if(started)ps.forEach(p=>{const e=expectedPaper(p.id,plan),a=paperProgress(p.id),gap=Math.round((e-a)*100);
+    if(gap>=10)out.push({sev:gap>=20?3:2,paper:p.id,t:`${p.short} is ${gap}% behind plan`,why:`The plan expects ${Math.round(e*100)}% by today and you're at ${Math.round(a*100)}%.`,go:"syllabus"})});
+  const cb=plan.valid?currentBlock(plan):null;
+  if(cb){let any=0;for(let i=0;i<10;i++)any+=hoursOn(iso(addDays(t,-i)));
+    if(any>0)cb.b.papers.forEach(pid=>{if(hoursOnPaper(pid,10)===0)out.push({sev:2,paper:pid,t:`No ${paperOf(pid).short} study in the last 10 days`,why:`It's in your current focus block (${cb.b.label}).`,go:"hours"})})}
+  ps.forEach(p=>{const n=CH[p.id].filter(r=>{const c=S.ch[r[3]]||{};return r[1]==="A"&&c.r&&(!c.last||diffDays(parse(c.last),t)>=Math.round(rd*1.5))}).length;
+    if(n>=2)out.push({sev:2,paper:p.id,t:`${n} priority-A ${p.short} chapters need revision`,why:`Not revised for ${Math.round(rd*1.5)} days or more.`,go:"due"})});
+  ps.forEach(p=>{const m=mocksFor(p.id);if(!m.length)return;const last=pctOf(m[m.length-1]);
+    if(last<40)out.push({sev:3,paper:p.id,t:`Latest ${p.short} mock is below 40`,why:`You scored ${Math.round(last)}%. 40 is the minimum to pass a paper.`,go:"mocks"});
+    else if(m.length>=3){const prev=(pctOf(m[m.length-2])+pctOf(m[m.length-3]))/2;if(prev-last>=8)out.push({sev:3,paper:p.id,t:`${p.short} mock score fell ${Math.round(prev-last)} points`,why:`Latest ${Math.round(last)}% against ${Math.round(prev)}% for the two before.`,go:"mocks"})}});
+  [1,2].forEach(g=>{const gp=ps.filter(p=>p.group===g),lat=gp.map(p=>{const m=mocksFor(p.id);return m.length?pctOf(m[m.length-1]):null});
+    if(gp.length===3&&lat.every(x=>x!=null)){const agg=lat.reduce((a,b)=>a+b,0)/3;if(agg<50)out.push({sev:3,paper:null,t:`Group ${g===1?"I":"II"} aggregate is below 50%`,why:`Latest mocks average ${Math.round(agg)}%. Each group needs 50% overall.`,go:"mocks"})}});
+  const rep=J.filter(e=>!e.mastered&&(e.reviews||[]).filter(r=>r.r==="forgot").length>=2);
+  if(rep.length)out.push({sev:2,paper:null,t:`${rep.length} tough topic${rep.length>1?"s":""} forgotten twice or more`,why:rep.slice(0,3).map(e=>e.topic).join("; "),go:"journal"});
+  ps.forEach(p=>{const n=CH[p.id].filter(r=>{const c=S.ch[r[3]]||{};return c.r&&!c.q}).length;
+    if(n>=4)out.push({sev:1,paper:p.id,t:`${n} ${p.short} chapters read without question practice`,why:"Reading without solving questions rarely turns into marks.",go:"syllabus"})});
+  if(started&&diffDays(plan.start,t)>=6){let wk=0;for(let i=0;i<7;i++)wk+=hoursOn(iso(addDays(t,-i)));const tg=targetSum(addDays(t,-6),t);
+    if(tg>0&&wk<tg*.7)out.push({sev:2,paper:null,t:`${wk.toFixed(1)} of ${tg} target hours this week`,why:`That's ${Math.round(wk/tg*100)}% of your target. Missed hours shrink the time left for revision.`,go:"hours"})}
+  const dueN=jDue().length;if(dueN>=5)out.push({sev:1,paper:null,t:`${dueN} tough topics are due for review`,why:"Reviews left too long need more relearning.",go:"journal"});
+  if(plan.valid)milestones(plan).forEach(m=>{const d=diffDays(t,m.d);if(d>=0&&d<=14)out.push({sev:1,paper:null,t:`${m.short} in ${d} day${d===1?"":"s"}`,why:`${fmt(m.d)} (estimated from your first paper; confirm on icai.org)`,go:"plan"})});
+  return out.sort((a,b)=>b.sev-a.sev)}
+/* today's priorities: candidate tasks scored from real data; pick the best 3–5 that fit today's hours */
+const DUR={learn:{A:120,B:90,C:60},revise:{A:60,B:45,C:30}};
+function readinessPerChapter(pid,part){const W=CH[pid].reduce((a,r)=>a+(PRI_W[r[1]]||1),0);return r=>Math.round((PRI_W[r[1]]||1)/W*READY_PARTS.find(x=>x[0]===part)[2]*10)/10}
+function priorities(){
+  const plan=buildPlan(),tt=parse(todayISO()),rd=+S.settings.revDays||21,ps=activePapers(),c=[];
+  const cb=plan.valid?currentBlock(plan):null,focus=cb?cb.b.papers:ps.map(p=>p.id),phase=cb?cb.ph.key:1;
+  const due=jDue();if(due.length)c.push({score:90+Math.min(due.length,9),paper:null,kind:"Review",t:`Review ${due.length} tough topic${due.length>1?"s":""}`,mins:Math.max(10,due.length*4),why:"They're due today in your spaced-review schedule.",gain:"Keeps hard topics in memory, so you don't have to relearn them later.",go:"journal"});
+  const ev=EV.slice().reverse().find(e=>!e.addedTough&&e.result.questions.some(q=>q.status==="partial"||q.status==="weak"));
+  if(ev){const lost=ev.result.questions.reduce((a,q)=>a+Math.max(0,q.max-q.awarded),0);c.push({score:82,paper:ev.paper,kind:"Correct",t:`Go through the weak answers in ${ev.name}`,mins:30,why:`Your evaluation shows ${Math.round(lost)} marks lost and those answers aren't in Tough topics yet.`,gain:"Fixing known mistakes is the cheapest way to recover marks.",go:"evaluate"})}
+  ps.forEach(p=>{const per=readinessPerChapter(p.id,"revision");CH[p.id].forEach(r=>{const s=S.ch[r[3]]||{};if(!s.r)return;const age=s.last?diffDays(parse(s.last),tt):999,weak=s.conf&&s.conf<=2;
+    if(age>=rd||weak)c.push({score:60+(PRI_W[r[1]]||1)*6+Math.min(Math.max(0,age-rd),30)/2+(weak?8:0)+(focus.includes(p.id)?3:0),paper:p.id,cid:r[3],kind:"Revise",t:`Revise ${r[0]}`,mins:DUR.revise[r[1]],
+      why:weak?`You rated your confidence ${s.conf}/5${age<999?`, last revised ${age} days ago`:""}.`:`Last revised ${age<999?age+" days ago":"a long time ago"}; your limit is ${rd} days.`,
+      gain:r[1]==="A"?"Priority-A topics are examined often. Fresh recall protects those marks.":`Brings it back before it fades and lifts ${p.short} revision freshness.`})})});
+  if(phase===1)focus.forEach(pid=>{const r=CH[pid].filter(r=>!(S.ch[r[3]]||{}).r).sort((a,b)=>(PRI_W[b[1]]||1)-(PRI_W[a[1]]||1))[0];if(!r)return;const g=readinessPerChapter(pid,"coverage")(r);
+    c.push({score:70+(PRI_W[r[1]]||1)*3,paper:pid,cid:r[3],kind:"Learn",t:`Read ${r[0]}`,mins:DUR.learn[r[1]],why:cb?`${paperOf(pid).short} is in your focus block (${cb.b.label}) and this ${r[1]==="A"?"priority-A ":""}chapter isn't read yet.`:`It's the highest-priority unread ${paperOf(pid).short} chapter.`,gain:`Adds about ${g} points to ${paperOf(pid).short} readiness (coverage).`})});
+  ps.forEach(p=>{const r=CH[p.id].filter(r=>{const s=S.ch[r[3]]||{};return s.r&&!s.q}).sort((a,b)=>(PRI_W[b[1]]||1)-(PRI_W[a[1]]||1))[0];if(!r)return;const g=readinessPerChapter(p.id,"practice")(r);
+    c.push({score:55+(PRI_W[r[1]]||1)*4+(focus.includes(p.id)?6:0),paper:p.id,cid:r[3],kind:"Practise",t:`Solve past-paper and RTP questions: ${r[0]}`,mins:60,why:"You've read it but haven't practised its questions yet.",gain:`Adds about ${g} points to ${p.short} readiness (practice) and shows whether you can apply it.`})});
+  ps.forEach(p=>{const m=mocksFor(p.id),last=m[m.length-1],age=last?diffDays(parse(last.date),tt):null,cov=paperReadiness(p.id).comp.coverage;
+    const mockTime=(phase>=3&&focus.includes(p.id)&&(age==null||age>=14))||(age==null&&cov>=.6);
+    if(mockTime)c.push({score:age==null?72:75,paper:p.id,kind:"Mock",t:`Write a full ${p.short} mock (3 hours)`,mins:180,why:age==null?`You've covered ${Math.round(cov*100)}% of ${p.short} but haven't written a mock, so its readiness is capped at ${NO_MOCK_CAP}.`:`Your last ${p.short} mock was ${age} days ago.`,gain:"Mocks are 25% of readiness and show exactly where marks are lost.",go:"mocks"})});
+  const target=Math.max(60,dayTarget(new Date())*60),pick=[],perPaper={},perKind={};let mins=0;const seen=new Set();
+  c.sort((a,b)=>b.score-a.score);
+  /* in the first-reading phase, new learning always gets a slot */
+  const learn=phase===1?c.find(x=>x.kind==="Learn"):null;if(learn){pick.push(learn);seen.add(learn.cid);mins+=learn.mins;perPaper[learn.paper]=1;perKind.Learn=1}
+  c.forEach(x=>{if(pick.length>=5)return;const key=x.cid||x.t;if(seen.has(key))return;if(x.paper&&x.kind!=="Mock"&&(perPaper[x.paper]||0)>=2)return;if(x.kind!=="Review"&&(perKind[x.kind]||0)>=2)return;
+    if(pick.length>=3&&x.mins>15&&mins+x.mins>target*1.2)return;pick.push(x);seen.add(key);mins+=x.mins;if(x.paper)perPaper[x.paper]=(perPaper[x.paper]||0)+1;perKind[x.kind]=(perKind[x.kind]||0)+1});
+  if(pick.length<3)c.forEach(x=>{if(pick.length>=3)return;const key=x.cid||x.t;if(seen.has(key))return;pick.push(x);seen.add(key);mins+=x.mins});
+  pick.sort((a,b)=>b.score-a.score);
+  pick.forEach(x=>{x.level=x.score>=80?"High":x.score>=65?"Medium":"Normal"});
+  return {list:pick,mins,target}}
+function overviewStats(){
+  const t=parse(todayISO()),ps=activePapers(),plan=buildPlan();let wk=0;for(let i=0;i<7;i++)wk+=hoursOn(iso(addDays(t,-i)));
+  const allM=S.mocks.filter(m=>ps.some(p=>p.id===m.paper)).sort((a,b)=>a.date<b.date?-1:1),last3=allM.slice(-3),R=ps.map(p=>paperReadiness(p.id));
+  let hit=0,n=0;for(let i=0;i<14;i++){const d=addDays(t,-i),k=iso(d);if(k<S.settings.startDate)continue;n++;const tg=dayTarget(d);if(tg>0&&hoursOn(k)>=tg)hit++}
+  const rd=+S.settings.revDays||21;let overdue=0,weakCh=0;ps.forEach(p=>CH[p.id].forEach(r=>{const c=S.ch[r[3]]||{};if(c.r&&(!c.last||diffDays(parse(c.last),t)>=rd))overdue++;if(c.r&&c.conf&&c.conf<=2)weakCh++}));
+  return {syl:overall(),exp:plan.valid&&t>=plan.start?expectedPct(plan):null,total:totalHours(),wk,wkT:targetSum(addDays(t,-6),t),streak:streak(),hit,n,
+    mockAvg:last3.length?last3.reduce((a,m)=>a+pctOf(m),0)/last3.length:null,latest:allM[allM.length-1]||null,overdue,weakCh,R,ready:R.length?Math.round(R.reduce((a,r)=>a+r.score,0)/R.length):0,next:nextPaper()}}
+
+
+/* ============ COMMAND CENTRE (Today) ============ */
+let PRI=[], warnAll=false, readyOpen=null;
+function commandStrip(O){const pc=v=>Math.round(v*100)+"%",[bd]=readinessBand(O.ready);
+  const tile=(href,label,val,sub)=>`<a class="tile" href="#${href}"><span class="label">${label}</span><b>${val}</b><span class="sub">${sub}</span></a>`;
+  return `<div class="tiles" aria-label="Preparation overview">
+    ${tile("today","Readiness",O.ready+"<span class=\"small muted\"> /100</span>",bd+" · average of papers")}
+    ${tile("syllabus","Syllabus done",pc(O.syl),O.exp==null?"plan not started":"plan expects "+pc(O.exp))}
+    ${tile("hours","This week",O.wk.toFixed(1)+"<span class=\"small muted\"> h</span>","target "+O.wkT+" h")}
+    ${tile("hours","Total studied",Math.round(O.total)+"<span class=\"small muted\"> h</span>","all time")}
+    ${tile("hours","Consistency",O.hit+"<span class=\"small muted\"> / "+O.n+"</span>","days on target (14) · streak "+O.streak)}
+    ${tile("mocks","Mock average",O.mockAvg==null?"–":Math.round(O.mockAvg)+"%",O.latest?"latest "+paperOf(O.latest.paper).short+" "+Math.round(pctOf(O.latest))+"%":"no mocks yet")}
+    ${tile("today","Revisions due",O.overdue,O.weakCh+" weak chapter"+(O.weakCh===1?"":"s"))}
+    ${tile("plan","Next paper",O.next?diffDays(new Date(),parse(O.next.date))+"<span class=\"small muted\"> days</span>":"–",O.next?O.next.p.short+" · "+fmtShort(parse(O.next.date)):"no upcoming paper")}
+  </div>`}
+function priText(x){return `${x.paper?paperOf(x.paper).short+": ":""}${x.t} (~${x.mins} min)`}
+function prioritiesCard(P){const tasks=S.todos[todayISO()]||[],has=x=>tasks.some(t=>t.t===priText(x));
+  return `<div class="card"><div class="row between"><div class="label">Today's priorities</div><span class="small muted">~${(P.mins/60).toFixed(1)} h of your ${(P.target/60).toFixed(1)} h target</span></div>
+    ${P.list.length?P.list.map((x,i)=>`<div class="pri">
+      <div class="row between"><span class="row" style="gap:8px"><span class="kind">${x.kind}</span>${x.paper?`<span class="chip"><span class="swatch" style="background:${col(x.paper)}"></span>${paperOf(x.paper).short}</span>`:""}<span class="small ${x.level==="High"?"sev3":x.level==="Medium"?"sev2":"sev1"}">${x.level}</span></span><span class="num small muted">~${x.mins} min</span></div>
+      <b>${esc(x.t)}</b>
+      <span class="small"><span class="muted">Why:</span> ${esc(x.why)}</span>
+      <span class="small"><span class="muted">Benefit:</span> ${esc(x.gain)}</span>
+      <div class="row">${has(x)?'<span class="chip A">In today\'s tasks</span>':`<button data-act="priadd" data-i="${i}">Add to today's tasks</button>`}${x.go?`<a class="small" style="color:var(--accent)" href="#${x.go}">Open ${x.go==="journal"?"Tough topics":x.go==="evaluate"?"Evaluate":"Mocks"}</a>`:""}</div>
+    </div>`).join(""):`<p class="small muted" style="margin:0">Nothing to suggest yet. Tick chapters in Syllabus and log your study, and priorities will appear here.</p>`}
+    ${P.list.length>1&&P.list.some(x=>!has(x))?`<div class="row"><button class="primary" data-act="priall">Add all to today's tasks</button></div>`:""}
+    <p class="small muted" style="margin:0">Picked from your revision dates, confidence ratings, unread chapters in your focus block, question practice, mocks, evaluations and tough topics, sized to today's hours.</p>
+  </div>`}
+function warningsCard(W){const sevL={3:"Urgent",2:"Important",1:"Heads-up"},shown=warnAll?W:W.slice(0,6);
+  return `<div class="card"><div class="row between"><div class="label">Warnings</div><span class="small muted">${W.length?W.length+" active":"all clear"}</span></div>
+    ${W.length?shown.map(w=>`<div class="warn-i"><div class="row" style="gap:8px"><span class="kind sev${w.sev}">${sevL[w.sev]}</span>${w.paper?`<span class="chip"><span class="swatch" style="background:${col(w.paper)}"></span>${paperOf(w.paper).short}</span>`:""}</div>
+      <b>${esc(w.t)}</b><span class="small muted">${esc(w.why)}</span>${w.go?(w.go==="due"?`<button class="ghost" style="justify-self:start;padding:0;color:var(--accent)" data-act="gotodue">See chapters due</button>`:`<a class="small" style="color:var(--accent)" href="#${w.go}">Open</a>`):""}</div>`).join("")
+      :`<p class="small muted" style="margin:0">No warnings right now. Warnings appear when a paper falls behind plan, revisions go stale, mock scores drop, mistakes repeat, practice lags, hours fall short, or an exam date is near.</p>`}
+    ${W.length>6?`<button class="ghost" data-act="warnall">${warnAll?"Show fewer":"Show all "+W.length}</button>`:""}
+  </div>`}
+function readinessCard(R){const pc=v=>Math.round(v*100)+"%";
+  const detail=r=>{const i=r.info,tp=+S.settings.targetPct||75;const lines={
+      coverage:`${i.read} of ${i.chapters} chapters read, weighted by priority (A counts 3, B 2, C 1)`,
+      revision:`depth ${pc(i.depth)} (Rev 1 = 0.4, Rev 2 = 0.7, Rev 3 = 1 per chapter) × 70% + freshness ${pc(i.freshness)} (read chapters revised in the last ${S.settings.revDays} days) × 30%`,
+      practice:"chapters with questions practised, weighted by priority",
+      mocks:i.mockAvg==null?`no mock yet, so this counts 0 and readiness is capped at ${NO_MOCK_CAP}`:`average of last ${i.mockN} mock${i.mockN>1?"s":""} ${Math.round(i.mockAvg)}% against your ${tp}% target`,
+      weak:`load ${i.load.toFixed(1)} of ${i.loadCap} allowed (${i.weakCh} weak chapter${i.weakCh===1?"":"s"}, ${i.tt} open tough topic${i.tt===1?"":"s"}, ${i.forgot} forgotten review${i.forgot===1?"":"s"} in 30 days × 0.5, ${i.evWeak} weak evaluation answer${i.evWeak===1?"":"s"} × 0.5), scaled by coverage`,
+      consistency:`${i.h28.toFixed(1)} h in the last 28 days against a fair share of ${i.fair.toFixed(1)} h of your targets`};
+    return `<tr><td colspan="9"><div class="calc">${READY_PARTS.map(([k,l,w])=>`<span><b>${l}</b> <span class="muted">· ${lines[k]}</span></span><span class="num">${pc(r.comp[k])} × ${w} = ${(r.comp[k]*w).toFixed(1)}</span>`).join("")}
+      <span><b>Readiness</b>${r.capped?` <span class="muted">· capped at ${NO_MOCK_CAP} until you write a mock</span>`:""}</span><span class="num"><b>${r.score}</b></span></div></td></tr>`};
+  return `<div class="card"><div class="row between"><div class="label">Paper readiness</div><span class="small muted">A preparation measure from 0 to 100, not a marks prediction</span></div>
+    <div class="tablewrap"><table><tr><th>Paper</th><th>Readiness</th><th class="c">Coverage</th><th class="c">Revision</th><th class="c">Questions</th><th class="c">Mocks</th><th class="c">Weak load</th><th class="c">Consistency</th><th></th></tr>
+    ${R.map(r=>{const p=paperOf(r.pid),[bd,cls]=readinessBand(r.score),d=examDates()[r.pid],dl=d?diffDays(new Date(),parse(d)):null;return `<tr>
+      <td><span class="row" style="gap:6px"><span class="swatch" style="background:${col(r.pid)}"></span><b>${p.short}</b></span>${dl!=null?`<span class="small muted">${dl>=0?dl+" days":"done"}</span>`:""}</td>
+      <td class="rd"><div class="row" style="gap:8px;flex-wrap:nowrap"><b class="num">${r.score}</b><div class="mini" style="flex:1"><i style="width:${r.score}%;background:${col(r.pid)}"></i></div><span class="chip ${cls}">${bd}</span></div></td>
+      <td class="c num">${pc(r.comp.coverage)}</td><td class="c num">${pc(r.comp.revision)}</td><td class="c num">${pc(r.comp.practice)}</td>
+      <td class="c num">${r.info.mockAvg==null?'<span class="muted">none</span>':Math.round(r.info.mockAvg)+"%"}</td>
+      <td class="c num">${r.info.load?r.info.load.toFixed(1):"0"}</td><td class="c num">${pc(r.comp.consistency)}</td>
+      <td><button class="ghost" data-act="rdy" data-p="${r.pid}">${readyOpen===r.pid?"Hide":"How it's scored"}</button></td></tr>${readyOpen===r.pid?detail(r):""}`}).join("")}
+    </table></div>
+    <details class="small"><summary class="muted" style="cursor:pointer">How readiness works</summary><div class="prose" style="margin-top:8px">
+      <p>Each paper's score adds up six parts: syllabus coverage (25), revision depth and freshness (20), question practice (15), mock performance (25), weak-topic load (10) and study consistency (5). Chapters count by priority (A = 3, B = 2, C = 1), so finishing important chapters moves the score more.</p>
+      <p>Ticking chapters alone can't make a paper look ready: without a mock the score stops at ${NO_MOCK_CAP}, and stale revisions, weak chapters, repeated mistakes and low mock scores pull it down. Bands: under 30 Starting, 30–49 Building, 50–69 Solid, 70–84 Strong, 85+ Exam-ready.</p>
+      <p>It measures how complete and recent your preparation is. It does not predict ICAI marks or a rank.</p></div></details>
+  </div>`}
+
 /* ============ VIEWS ============ */
 V.today=()=>{
   const plan=buildPlan(), cb=currentBlock(plan), t=todayISO(), hrs=hoursOn(t), tgt=dayTarget(new Date()), we=isWeekend(new Date());
-  const due=[];activePapers().forEach(p=>CH[p.id].forEach((c,i)=>{const s=chState(p.id,i);if(s.r&&s.last&&diffDays(parse(s.last),new Date())>=+S.settings.revDays)due.push({p,c,i,s,age:diffDays(parse(s.last),new Date())});else if(s.r&&s.conf&&s.conf<=2)due.push({p,c,i,s,age:s.last?diffDays(parse(s.last),new Date()):0,weak:true})}));
+  const due=[];activePapers().forEach(p=>CH[p.id].forEach((c,i)=>{const s=chState(p.id,i);if(!s.r)return;const age=s.last?diffDays(parse(s.last),new Date()):null;if(age==null||age>=+S.settings.revDays)due.push({p,c,i,s,age:age==null?9999:age});else if(s.conf&&s.conf<=2)due.push({p,c,i,s,age,weak:true})}));
   due.sort((a,b)=>b.age-a.age);
   const todos=S.todos[t]||[];
   const daysLeft=diffDays(new Date(),parse(examStart()));
+  const O=overviewStats(),Wn=warnings(),P=priorities();PRI=P.list;
   return `
-  ${journeyCard()}
+  ${commandStrip(O)}
+  <div class="grid g2">${prioritiesCard(P)}${warningsCard(Wn)}</div>
+  ${readinessCard(O.R)}
   <div class="grid g2">
     <div class="card hero">
       <div class="label">Where you are</div>
@@ -1035,21 +1217,17 @@ V.today=()=>{
       <p class="small muted" style="margin:0">Tap + for every 30 minutes, or run the focus timer and it logs the time when you stop.</p>
     </div>
   </div>
+  ${journeyCard()}
   <div class="grid g2">
-    <div class="card">
-      <div class="label">Paper progress</div>
-      ${activePapers().map(p=>{const v=paperProgress(p.id);return `<div class="paperline"><span class="k">${p.short}</span><div class="bar"><i style="width:${v*100}%;background:${col(p.id)}"></i></div><span class="num small">${Math.round(v*100)}%</span></div>`}).join("")}
-      <p class="small muted" style="margin:0">Weighting: read 40%, revisions 20 / 15 / 10%, questions 15%.</p>
-    </div>
     <div class="card">
       <div class="row between"><div class="label">Today's tasks</div><span class="small muted">${todos.filter(x=>x.done).length}/${todos.length}</span></div>
       <ul class="list">${todos.map((x,i)=>`<li class="${x.done?"done":""}"><label><input type="checkbox" class="chk" data-act="todo" data-i="${i}" ${x.done?"checked":""}><span>${esc(x.t)}</span></label><button class="ghost" data-act="deltodo" data-i="${i}" aria-label="Delete task">×</button></li>`).join("")||`<li class="muted small">No tasks yet. Add 3–5 concrete ones, such as “Ind AS 116: 6 PYQs”.</li>`}</ul>
       <form class="row" id="todoForm"><input id="todoIn" placeholder="Add a task for today" style="flex:1"><button class="primary">Add</button></form>
     </div>
   </div>
-  <div class="card">
+  <div class="card" id="dueCard">
     <div class="row between"><div class="label">Due for revision</div><span class="small muted">Not revised for ${S.settings.revDays}+ days, or confidence 1–2</span></div>
-    ${due.length?`<div class="tablewrap"><table><tr><th>Paper</th><th>Chapter</th><th>Last revised</th><th class="c">Mark revised</th></tr>${due.slice(0,12).map(d=>`<tr><td><span class="chip"><span class="swatch" style="background:${col(d.p.id)}"></span>${d.p.short}</span></td><td>${esc(d.c[0])} ${d.weak?'<span class="chip bad">weak</span>':""}</td><td class="num small">${d.s.last?d.age+" days ago":"–"}</td><td class="c"><button data-act="touch" data-k="${chKey(d.p.id,d.i)}">Revised today</button></td></tr>`).join("")}</table></div>`:`<p class="muted small" style="margin:0">Nothing due. Chapters appear here once you tick Read and time passes, so nothing slips out of memory before the exam.</p>`}
+    ${due.length?`<div class="tablewrap"><table><tr><th>Paper</th><th>Chapter</th><th>Last revised</th><th class="c">Mark revised</th></tr>${due.slice(0,12).map(d=>`<tr><td><span class="chip"><span class="swatch" style="background:${col(d.p.id)}"></span>${d.p.short}</span></td><td>${esc(d.c[0])} ${d.weak?'<span class="chip bad">weak</span>':""}</td><td class="num small">${d.s.last?d.age+" days ago":"never"}</td><td class="c"><button data-act="touch" data-k="${chKey(d.p.id,d.i)}">Revised today</button></td></tr>`).join("")}</table></div>`:`<p class="muted small" style="margin:0">Nothing due. Chapters appear here once you tick Read and time passes, so nothing slips out of memory before the exam.</p>`}
   </div>`;
 };
 
@@ -1081,15 +1259,7 @@ V.plan=()=>{
   const plan=buildPlan(), total=plan.D, t=new Date(), nowPct=Math.min(100,Math.max(0,diffDays(plan.start,t)/total*100));
   const rows=[];
   plan.phases.forEach(ph=>{rows.push(`<div class="grow"><span class="small" style="font-weight:600">${esc(ph.name.split(" · ")[0])}</span><div class="gtrack">${ph.blocks.map(b=>{const l=diffDays(plan.start,b.start)/total*100,w=diffDays(b.start,b.end)/total*100;return `<div class="gseg" title="${esc(b.label)}: ${fmtShort(b.start)} to ${fmtShort(addDays(b.end,-1))}" style="left:${l}%;width:${w}%;background:${col(b.papers[0])}">${esc(b.label)}</div>`}).join("")}<div class="gnow" style="left:${nowPct}%"></div></div></div>`)});
-  const E=plan.exam, ms=[
-    [addDays(E,-100),"Exam notification and form window usually opens around here. Fill the form early and check articleship, AICITSS and SPOM eligibility."],
-    [addDays(E,-75),"RTP (Revision Test Papers) usually released. Solve every question, with amendments."],
-    [addDays(E,-60),"MTP Series I usually released. Attempt each paper as a full 3-hour test."],
-    [addDays(E,-35),"MTP Series II usually released. Second full mock round."],
-    [addDays(E,-21),"Final revision starts. No new topics from here."],
-    [addDays(E,-14),"Admit card usually available. Download it and check your photo, signature and centre."],
-  ];
-  const ad=activeDates();ad.forEach((x,i)=>{const gap=i?diffDays(parse(ad[i-1].date),parse(x.date)):null;ms.push([parse(x.date),`<b>${esc(x.p.short)} exam</b>${gap!=null?` · ${gap-1} revision day${gap-1===1?"":"s"} before it`:" · first paper"}`])});
+  const ms=milestones(plan).map(m=>[m.d,m.html]);
   if(!plan.valid)return `<h2>Your timeline</h2><div class="card hero"><p style="margin:0">${esc(plan.issue)}</p><div class="row"><a class="btn" href="#setup" style="text-decoration:none">Open Setup</a></div></div>`;
   return `
   ${plan.warn?`<div class="notice warn"><span>${esc(plan.warn)}</span></div>`:""}
@@ -1510,6 +1680,10 @@ document.addEventListener("click",e=>{
     if(a==="editmock"){mockEdit=b.dataset.id;render();const f=document.getElementById("mockForm");if(f)f.scrollIntoView({block:"center"});return}
     if(a==="mockcancel"){mockEdit=null;render();return}
     if(a==="dismissNotice"){notice("");return}
+    if(a==="priadd"||a==="priall"){const d=todayISO(),L=(S.todos[d]=S.todos[d]||[]),items=a==="priall"?PRI:[PRI[+b.dataset.i]];let n=0;items.forEach(x=>{if(x&&!L.some(t=>t.t===priText(x))){L.push({t:priText(x),done:false});n++}});save();render();toast(n?`Added ${n} task${n>1?"s":""} to today`:"Already in today's tasks");return}
+    if(a==="warnall"){warnAll=!warnAll;render();return}
+    if(a==="rdy"){readyOpen=readyOpen===b.dataset.p?null:b.dataset.p;render();return}
+    if(a==="gotodue"){const el=document.getElementById("dueCard");if(el)el.scrollIntoView({behavior:RM()?"auto":"smooth",block:"start"});return}
   }
 });
 document.addEventListener("change",e=>{

@@ -1,5 +1,29 @@
 # CA Final Rank Desk: changelog
 
+## Phase 2: AIR Command Centre (no data format change)
+
+Restore point: `archive/app-v2-pre-phase2.html`.
+
+- **Overview strip** on Today: readiness, syllabus vs plan, this week's hours vs target, total hours,
+  consistency (days on target in 14) and streak, mock average (last 3) and latest mock, revisions due and
+  weak chapters, next paper countdown. Each tile links to its section.
+- **Paper readiness (0–100)** for each active paper: coverage 25, revision depth and freshness 20, question
+  practice 15, mocks 25, weak-topic load 10, consistency 5. Chapters weighted by priority (A 3, B 2, C 1).
+  Capped at 75 until the paper has a mock. "How it's scored" shows every part and its inputs; the parts add
+  up to the score. Labelled as a preparation measure, not a marks prediction.
+- **Warnings**, most serious first: paper behind plan (per-paper expectation from the timeline blocks),
+  focus-block paper not studied for 10 days, stale priority-A chapters, mock below 40, falling mock score,
+  group aggregate below 50%, tough topics forgotten twice, reading without question practice, weekly hours
+  under 70% of target, many reviews due, estimated deadlines within 14 days.
+- **Today's priorities**: 3–5 tasks scored from your data (due tough topics, evaluation mistakes not yet
+  corrected, overdue or low-confidence revisions, next unread chapter in the focus block, question practice,
+  a mock when coverage is high or the mock phase has started), sized to today's hours. Each shows paper,
+  kind, duration, priority, why it was chosen and the expected benefit, with "Add to today's tasks".
+- The old "Paper progress" card is replaced by the readiness table. "Due for revision" now also lists read
+  chapters that were never revised.
+- Timeline milestones moved into a shared function used by both the timeline and warnings.
+- `tests/phase2.test.js`: 37 checks (readiness maths, plan expectations, each warning, priorities, UI, layout).
+
 ## Phase 1.1: view-only access handling
 
 - Cause of "Not synced yet, retrying" on friends' phones: people outside the owner's organization are
