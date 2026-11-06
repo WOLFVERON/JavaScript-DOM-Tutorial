@@ -54,7 +54,7 @@ const today = new Date(); const ymd = n => { const d = new Date(today); d.setDat
     const j1 = [{id: 'j1', p: 'fr', ch: 4, topic: 'Lessee ROU', kind: 'Concept', due: ymd(1), box: 0, reviews: []}];
     const p = await open(b, {local: {'caFinalRankDesk.v1': v1, 'caFinalRankDesk.v1.journal': j1}});
     const r = await p.evaluate(() => ({v: S.v, fr5: S.ch['fr-5'], mocks: S.mocks.length, exam: S.settings.examDates.fr, onBoard: S.settings.onBoard, cid: J[0].cid, rp: store.get(LS + '.restorePoint', null)}));
-    ok('migration: upgraded to the current data version', r.v === 3, r.v);
+    ok('migration: upgraded to the current data version', r.v === 4, r.v);
     ok('migration: chapter ticks, confidence, notes kept', r.fr5.r && r.fr5.conf === 2 && r.fr5.note === 'leases', r.fr5);
     ok('migration: revision history created from last date', Array.isArray(r.fr5.hist) && r.fr5.hist.length === 1);
     ok('migration: broken mock dropped, good one kept', r.mocks === 1, r.mocks);

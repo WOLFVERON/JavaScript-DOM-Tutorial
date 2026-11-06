@@ -13,6 +13,7 @@ A single-page CA Final preparation tracker (new scheme, all 6 papers).
 node tests/phase1.test.js     # needs Playwright with Chromium
 node tests/phase2.test.js
 node tests/phase3.test.js
+node tests/phase4.test.js
 ```
 The tests use an in-memory stand-in for the Claude page runtime, so they run offline.
 

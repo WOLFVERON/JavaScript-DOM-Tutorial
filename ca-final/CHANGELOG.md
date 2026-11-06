@@ -1,5 +1,29 @@
 # CA Final Rank Desk: changelog
 
+## Phase 4: Advanced mock performance analytics (data version 4)
+
+Restore point: `archive/app-v4-pre-phase4.html`. Data upgrades v3 → v4 automatically (mocks gain a mistake log).
+
+- **Mock details**: mock number, time taken, questions attempted / not attempted, marks left unattempted,
+  difficulty, source. Validated: unattempted marks and logged mistakes can't exceed the marks not scored.
+- **Mistake log per mock**: question, chapter, category (conceptual error, incorrect provision or standard,
+  calculation, formula, misread the question, incomplete answer, presentation, time management, recall
+  failure), marks lost, note. Shows marks not scored vs explained. Unclassified mistakes (from evaluations)
+  can be classified in place. Any mistake can be sent to Tough topics in one click.
+- **Analytics** (filter by paper): tiles for count, average, last three, best/worst, latest change,
+  unattempted marks, recoverable marks and logged losses; trend chart; marks lost across six skills
+  (concepts, application, calculation, presentation, time, recall) and by mistake type; chapters costing the
+  most marks; repeated mistakes (same type, same chapter, 2+ mocks); per-paper table with last three, worst
+  and change.
+- **Recoverable marks**: lost marks split into easily recoverable (80%), needs more practice (50%) and needs
+  conceptual work (30%), giving an "if fixed" score for the latest mock of each paper. Rates and reasoning
+  are shown; unlogged lost marks are excluded and flagged.
+- Evaluate → "Save to Mocks" now carries weak answers as unclassified mistakes, plus unattempted questions
+  and marks (scaled so they never exceed marks not scored).
+- New warning for mistakes repeated across mocks. Mock percentages rounded to 2 decimals.
+- Evaluation results tolerate records with missing fields.
+- `tests/phase4.test.js`: 33 checks.
+
 ## Phase 3: Intelligent daily study planner (data version 3)
 
 Restore point: `archive/app-v3-pre-phase3.html`. Data upgrades v2 → v3 automatically, with a restore point.

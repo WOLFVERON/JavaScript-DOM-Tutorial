@@ -25,7 +25,7 @@ async function open(b, st, hash = 'today', vp = {width: 1280, height: 900}) {
     const v2 = {v: 2, updatedAt: 5, settings: {startDate: ymd(-5)}, ch: {'fr-0': {r: true, hist: []}}, log: {}, mocks: [], checks: {}, todos: {}};
     const p = await open(b, v2);
     const r = await p.evaluate(() => ({v: S.v, plan: isObj(S.plan), sessions: Array.isArray(S.sessions), kept: S.ch['fr-0'].r, rp: !!store.get(LS + '.restorePoint', null)}));
-    ok('migration v3: adds plans and sessions, keeps progress, saves a restore point', r.v === 3 && r.plan && r.sessions && r.kept && r.rp, r);
+    ok('migration v3: adds plans and sessions, keeps progress, saves a restore point', r.v >= 3 && r.plan && r.sessions && r.kept && r.rp, r);
     await p.close();
   }
 

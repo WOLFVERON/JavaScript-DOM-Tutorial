@@ -133,6 +133,10 @@ svg text{fill:var(--muted);font-family:var(--mono);font-size:10px}
 .legend span{display:inline-flex;align-items:center;gap:5px}
 @media (max-width:560px){.paperline{grid-template-columns:4.5rem 1fr 2.8rem}.grow{grid-template-columns:5.5rem 1fr}.count b{font-size:1.25rem}}
 html{overflow-x:hidden}
+.lossrow{display:grid;grid-template-columns:minmax(0,1fr) 4.5rem;gap:2px 10px;align-items:center;font-size:.84rem}
+.lossrow .mini{grid-column:1/-1;height:7px}
+.lossrow .num{text-align:right}
+.mxpanel{display:grid;gap:10px;padding:12px;background:var(--sunk);border-radius:8px}
 .tiles{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
 @media (max-width:720px){.tiles{grid-template-columns:repeat(2,minmax(0,1fr))}}
 .tile{display:grid;gap:2px;align-content:start;padding:12px 14px;border:1px solid var(--line);border-radius:10px;background:var(--surface);text-decoration:none;color:inherit;min-width:0}
@@ -350,7 +354,7 @@ function freshState(){
     ch:{}, log:{}, mocks:[], checks:{}, todos:{}, plan:{}, sessions:[]};
 }
 /* ---- data versions: each step upgrades saved data by one version ---- */
-const DATA_VERSION=3;
+const DATA_VERSION=4;
 const MIGRATIONS={
   2:o=>{ // v1 -> v2: revision history on chapters, drop malformed records
     o.ch=isObj(o.ch)?o.ch:{};for(const k in o.ch){const c=o.ch[k];if(!isObj(c)){delete o.ch[k];continue}if(!Array.isArray(c.hist))c.hist=c.last?[{d:c.last,s:"legacy"}]:[]}
@@ -360,6 +364,9 @@ const MIGRATIONS={
   3:o=>{ // v2 -> v3: daily plans and focus-session history
     o.plan=isObj(o.plan)?o.plan:{};
     o.sessions=Array.isArray(o.sessions)?o.sessions.filter(x=>x&&x.id&&isFinite(+x.start)&&isFinite(+x.mins)):[];
+    return o},
+  4:o=>{ // v3 -> v4: mock details and a mistake log on each mock
+    (o.mocks||[]).forEach(m=>{m.mistakes=Array.isArray(m.mistakes)?m.mistakes.filter(x=>x&&x.id&&+x.lost>0):[]});
     return o}
 };
 function migrate(o){let v=+o.v||1;while(v<DATA_VERSION){v++;o=MIGRATIONS[v](o);o.v=v}return o}
@@ -955,7 +962,9 @@ function evReconcile(qs,formMax){qs.forEach(q=>{q.max=Math.max(0,+q.max||0);q.aw
   else if(maxSum>0&&maxSum<formMax-0.01)note=`The questions found carry ${maxSum} marks, less than the paper's ${formMax}. Part of the question paper may be missing from the upload.`;
   return {total:Math.round(Math.min(formMax,sum)*2)/2,note,maxSum}}
 function evStatusChip(s){return s==="full"?'<span class="chip A">full</span>':s==="partial"?'<span class="chip warn">partial</span>':s==="not_attempted"?'<span class="chip">not attempted</span>':'<span class="chip bad">weak</span>'}
-function evResult(ev){const r=ev.result,pct=ev.max?r.total/ev.max*100:0;
+function evResult(ev){const r=Object.assign({summary:"",confidence:"medium",strengths:[],improvements:[],presentation:"",time:""},ev.result);
+  r.questions=(r.questions||[]).map(q=>Object.assign({q:"?",max:0,awarded:0,status:"partial",credited:[],missed:[],feedback:"",icai_tip:""},q,{credited:Array.isArray(q.credited)?q.credited:[],missed:Array.isArray(q.missed)?q.missed:[]}));
+  const pct=ev.max?r.total/ev.max*100:0;
   return `<div class="card hero">
     <div class="row between"><div class="row"><span class="chip"><span class="swatch" style="background:${col(ev.paper)}"></span>${paperOf(ev.paper).short}</span><b>${esc(ev.name)}</b><span class="small muted">${fmt(ev.date)} · ${ev.pages} page${ev.pages===1?"":"s"}</span></div><button class="ghost" data-act="evclose">Close</button></div>
     <div class="row" style="gap:28px">
@@ -1027,7 +1036,11 @@ function evClick(b){const a=b.dataset.act,id=b.dataset.id,ev=id&&EV.find(x=>x.id
   if(a==="evclose"){evOpen=null;render();return true}
   if(a==="evq"){evQOpen=evQOpen===b.dataset.k?null:b.dataset.k;render();return true}
   if(a==="evdel"){evRemove(id);if(evOpen===id)evOpen=null;render();toast("Evaluation deleted");return true}
-  if(a==="evmock"&&ev){S.mocks.push({id:Date.now().toString(36),paper:ev.paper,date:ev.date,score:ev.result.total,max:ev.max,src:"Claude-evaluated · "+ev.name});ev.savedMock=true;evPut(ev);save();render();toast("Saved to Mocks");return true}
+  if(a==="evmock"&&ev){const qs=ev.result.questions,na=qs.filter(q=>q.status==="not_attempted"),room=Math.max(0,ev.max-ev.result.total);
+    let mist=qs.filter(q=>(q.status==="partial"||q.status==="weak")&&q.max>q.awarded).map((q,i)=>({id:"x"+Date.now().toString(36)+i,q:String(q.q).slice(0,12),cid:null,cat:"unclassified",lost:Math.round((q.max-q.awarded)*2)/2,note:String((q.missed||[])[0]||q.feedback||"").slice(0,160)}));
+    let um=na.reduce((a,q)=>a+q.max,0);const tot=mist.reduce((a,x)=>a+x.lost,0)+um;
+    if(tot>room&&tot>0){const f=room/tot;mist.forEach(x=>x.lost=Math.floor(x.lost*f*2)/2);mist=mist.filter(x=>x.lost>0);um=Math.floor(um*f*2)/2}
+    S.mocks.push({id:"m"+Date.now().toString(36),paper:ev.paper,num:"",date:ev.date,score:ev.result.total,max:ev.max,timeMins:null,qAtt:qs.length-na.length,qUnatt:na.length,unattMarks:um,diff:null,src:"Claude-evaluated · "+ev.name,mistakes:mist});ev.savedMock=true;evPut(ev);save();render();toast("Saved to Mocks");return true}
   if(a==="evtough"&&ev){ev.result.questions.filter(q=>q.status==="partial"||q.status==="weak").forEach((q,i)=>{const miss=q.missed[0]||q.feedback;jPut({id:"j"+Date.now().toString(36)+i,p:ev.paper,cid:null,topic:`${ev.name} Q${q.q}: ${miss.length>90?miss.slice(0,88)+"…":miss}`,kind:"Mock mistake",why:q.missed.join("; ")+(q.icai_tip?" | ICAI: "+q.icai_tip:""),created:todayISO(),box:0,due:iso(addDays(new Date(),1)),reviews:[],mastered:false,clicked:"",card:null})});ev.addedTough=true;evPut(ev);render();toast("Added to Tough topics");return true}
   return false}
 function evChange(b){const a=b.dataset.act;
@@ -1051,7 +1064,7 @@ const PRI_W={A:3,B:2,C:1};
 const READY_PARTS=[["coverage","Syllabus coverage",25],["revision","Revision depth and freshness",20],["practice","Question practice",15],["mocks","Mock performance",25],["weak","Weak-topic load",10],["consistency","Study consistency",5]];
 const NO_MOCK_CAP=75;
 function mocksFor(pid){return S.mocks.filter(m=>m.paper===pid).sort((a,b)=>a.date<b.date?-1:a.date>b.date?1:0)}
-function pctOf(m){return m.score/m.max*100}
+function pctOf(m){return Math.round(m.score/m.max*10000)/100}
 function hoursOnPaper(pid,days){const t=new Date();let h=0;for(let i=0;i<days;i++)h+=+((S.log[iso(addDays(t,-i))]||{})[pid]||0);return h}
 function paperWeightShare(pid){const ps=activePapers(),tw=ps.reduce((a,p)=>a+p.w,0);return tw?paperOf(pid).w/tw:0}
 /* readiness 0–100 for one paper, with every input kept for display */
@@ -1092,6 +1105,7 @@ function warnings(){
     else if(m.length>=3){const prev=(pctOf(m[m.length-2])+pctOf(m[m.length-3]))/2;if(prev-last>=8)out.push({sev:3,paper:p.id,t:`${p.short} mock score fell ${Math.round(prev-last)} points`,why:`Latest ${Math.round(last)}% against ${Math.round(prev)}% for the two before.`,go:"mocks"})}});
   [1,2].forEach(g=>{const gp=ps.filter(p=>p.group===g),lat=gp.map(p=>{const m=mocksFor(p.id);return m.length?pctOf(m[m.length-1]):null});
     if(gp.length===3&&lat.every(x=>x!=null)){const agg=lat.reduce((a,b)=>a+b,0)/3;if(agg<50)out.push({sev:3,paper:null,t:`Group ${g===1?"I":"II"} aggregate is below 50%`,why:`Latest mocks average ${Math.round(agg)}%. Each group needs 50% overall.`,go:"mocks"})}});
+  repeatedMistakes(mocksIn("all")).slice(0,3).forEach(r=>{const ch=chRow(r.cid);out.push({sev:2,paper:r.paper,t:`Same mistake in ${r.n} mocks: ${CAT[r.cat].label.toLowerCase()}`,why:`${ch?ch[0]:"A chapter"} · ${r.lost} marks lost so far.`,go:"mocks"})});
   const rep=J.filter(e=>!e.mastered&&(e.reviews||[]).filter(r=>r.r==="forgot").length>=2);
   if(rep.length)out.push({sev:2,paper:null,t:`${rep.length} tough topic${rep.length>1?"s":""} forgotten twice or more`,why:rep.slice(0,3).map(e=>e.topic).join("; "),go:"journal"});
   ps.forEach(p=>{const n=CH[p.id].filter(r=>{const c=S.ch[r[3]]||{};return c.r&&!c.q}).length;
@@ -1278,6 +1292,44 @@ function readinessCard(R){const pc=v=>Math.round(v*100)+"%";
       <p>It measures how complete and recent your preparation is. It does not predict ICAI marks or a rank.</p></div></details>
   </div>`}
 
+/* ============ MOCK ANALYTICS ============
+   Mistake categories map to the six skills and to how recoverable the marks are. The recovery rates are
+   stated assumptions shown on screen, not predictions. */
+const MISTAKE_CATS=[
+  ["concept","Conceptual error","concept","concept"],
+  ["provision","Incorrect provision or standard","recall","practice"],
+  ["calc","Calculation mistake","calc","easy"],
+  ["formula","Formula mistake","recall","practice"],
+  ["misread","Misread the question","application","easy"],
+  ["incomplete","Incomplete answer","application","practice"],
+  ["presentation","Presentation weakness","presentation","easy"],
+  ["time","Time-management problem","time","practice"],
+  ["recall","Recall failure","recall","practice"],
+  ["unclassified","Not classified yet",null,null]];
+const CAT=Object.fromEntries(MISTAKE_CATS.map(c=>[c[0],{label:c[1],dim:c[2],bucket:c[3]}]));
+const DIMS=[["concept","Conceptual understanding"],["application","Application of concepts"],["calc","Calculation accuracy"],["presentation","Answer presentation"],["time","Time management"],["recall","Recall of provisions, standards and formulas"]];
+const RECOVER={easy:{rate:.8,label:"Easily recoverable",note:"Calculation slips, misread questions and presentation: checking work, reading each question twice and fixed answer formats remove most of these."},
+  practice:{rate:.5,label:"Needs more practice",note:"Formulas, provisions, recall, incomplete answers, timing and unattempted questions improve with spaced revision and timed practice, so about half comes back by the next mock."},
+  concept:{rate:.3,label:"Needs conceptual work",note:"Conceptual gaps need re-learning, so only about a third is realistic by the next mock."}};
+const DIFF=["Easy","Moderate","Hard"];
+function mockLost(m){const out={byCat:{},byDim:{},byBucket:{easy:0,practice:0,concept:0},mist:0,unatt:+m.unattMarks||0};
+  (m.mistakes||[]).forEach(x=>{const c=CAT[x.cat]||CAT.unclassified,l=+x.lost||0;out.mist+=l;out.byCat[x.cat]=(out.byCat[x.cat]||0)+l;if(c.dim)out.byDim[c.dim]=(out.byDim[c.dim]||0)+l;if(c.bucket)out.byBucket[c.bucket]+=l});
+  if(out.unatt){out.byDim.time=(out.byDim.time||0)+out.unatt;out.byBucket.practice+=out.unatt}
+  out.total=out.mist+out.unatt;out.unknown=Math.max(0,m.max-m.score-out.total);out.unclassified=out.byCat.unclassified||0;return out}
+function recoverable(m){const L=mockLost(m),b={};let rec=0;for(const k in RECOVER){b[k]={lost:L.byBucket[k],rec:Math.round(L.byBucket[k]*RECOVER[k].rate*2)/2};rec+=b[k].rec}
+  return {buckets:b,rec,projected:Math.min(m.max,m.score+rec),L}}
+function mocksIn(pid){return S.mocks.filter(m=>(pid==="all"?activePapers().some(p=>p.id===m.paper):m.paper===pid)).sort((a,b)=>a.date<b.date?-1:a.date>b.date?1:0)}
+function mockChange(m){const prev=mocksFor(m.paper).filter(x=>x.date<m.date||(x.date===m.date&&x.id<m.id)).pop();return prev?pctOf(m)-pctOf(prev):null}
+function mockSummary(list){const pc=list.map(pctOf);if(!pc.length)return null;
+  return {n:pc.length,avg:pc.reduce((a,b)=>a+b,0)/pc.length,best:Math.max(...pc),worst:Math.min(...pc),last3:list.slice(-3).map(pctOf),latest:list[list.length-1],change:mockChange(list[list.length-1]),
+    unattAvg:list.filter(m=>m.unattMarks!=null&&m.unattMarks!=="").reduce((a,m,_,arr)=>a+(+m.unattMarks||0)/arr.length,0)}}
+function lossTotals(list){const t={byCat:{},byDim:{},total:0,max:0,unatt:0};list.forEach(m=>{const L=mockLost(m);t.total+=L.total;t.max+=m.max;t.unatt+=L.unatt;
+  for(const k in L.byCat)t.byCat[k]=(t.byCat[k]||0)+L.byCat[k];for(const k in L.byDim)t.byDim[k]=(t.byDim[k]||0)+L.byDim[k]});return t}
+function chapterLosses(list){const map={};list.forEach(m=>(m.mistakes||[]).forEach(x=>{if(!x.cid)return;const e=map[x.cid]||(map[x.cid]={cid:x.cid,paper:m.paper,lost:0,mocks:new Set(),cats:{}});e.lost+=+x.lost||0;e.mocks.add(m.id);e.cats[x.cat]=(e.cats[x.cat]||0)+(+x.lost||0)}));
+  return Object.values(map).map(e=>Object.assign(e,{n:e.mocks.size})).sort((a,b)=>b.lost-a.lost)}
+function repeatedMistakes(list){const map={};list.forEach(m=>(m.mistakes||[]).forEach(x=>{if(!x.cid||x.cat==="unclassified")return;const k=x.cid+"|"+x.cat,e=map[k]||(map[k]={cid:x.cid,cat:x.cat,paper:m.paper,mocks:new Set(),lost:0});e.mocks.add(m.id);e.lost+=+x.lost||0}));
+  return Object.values(map).filter(e=>e.mocks.size>=2).map(e=>Object.assign(e,{n:e.mocks.size})).sort((a,b)=>b.n-a.n||b.lost-a.lost)}
+
 /* ============ VIEWS ============ */
 V.today=()=>{
   const plan=buildPlan(), cb=currentBlock(plan), t=todayISO(), hrs=hoursOn(t), tgt=dayTarget(new Date()), we=isWeekend(new Date());
@@ -1374,45 +1426,109 @@ V.plan=()=>{
   </div>`;
 };
 
-let mockForm={paper:"fr"}, mockEdit=null;
+let mockForm={paper:"fr"}, mockEdit=null, mkPaper="all", mkOpen=null;
+function mockChart(list,ps,tp){const W=640,H=220,pad=32;if(!list.length)return `<p class="muted small" style="margin:0">Add a mock score to see your trend against the target line.</p>`;
+  const d0=parse(list[0].date),d1=parse(list[list.length-1].date),span=Math.max(1,diffDays(d0,d1));const x=d=>pad+diffDays(d0,parse(d))/span*(W-pad*2),y=v=>H-pad-(v/100)*(H-pad*1.6);
+  return `<div style="overflow-x:auto"><svg viewBox="0 0 ${W} ${H}" width="100%" style="min-width:420px" role="img" aria-label="Mock score trend">
+    ${[0,40,60,80,100].map(v=>`<line x1="${pad}" x2="${W-pad/2}" y1="${y(v)}" y2="${y(v)}" stroke="var(--line)" stroke-width="1"/><text x="${pad-6}" y="${y(v)+3}" text-anchor="end">${v}</text>`).join("")}
+    <line x1="${pad}" x2="${W-pad/2}" y1="${y(tp)}" y2="${y(tp)}" stroke="var(--bad)" stroke-dasharray="4 4" stroke-width="1.5"/><text x="${W-pad/2}" y="${y(tp)-5}" text-anchor="end" style="fill:var(--bad)">target ${tp}%</text>
+    ${ps.map(p=>{const m=list.filter(z=>z.paper===p.id);if(!m.length)return"";return `<polyline points="${m.map(z=>`${x(z.date)},${y(pctOf(z))}`).join(" ")}" fill="none" stroke="${col(p.id)}" stroke-width="2"/>${m.map((z,i)=>`<circle cx="${x(z.date)}" cy="${y(pctOf(z))}" r="${i===m.length-1?5:3.5}" fill="${col(p.id)}"><title>${p.short} ${fmtShort(parse(z.date))}: ${Math.round(pctOf(z))}%</title></circle>`).join("")}`}).join("")}
+    <text x="${pad}" y="${H-8}">${fmtShort(d0)}</text><text x="${W-pad/2}" y="${H-8}" text-anchor="end">${fmtShort(d1)}</text></svg></div>
+    <div class="legend">${ps.map(p=>`<span><span class="swatch" style="background:${col(p.id)}"></span>${p.short}</span>`).join("")}</div>`}
+function lossBars(rows,maxV,unit){return rows.map(([label,v,sub])=>`<div class="lossrow"><span>${label}${sub?` <span class="muted small">${sub}</span>`:""}</span><span class="num">${unit(v)}</span><div class="mini"><i style="width:${maxV?v/maxV*100:0}%;background:var(--warn)"></i></div></div>`).join("")}
+function mistakePanel(m){const L=mockLost(m),cs=CH[m.paper]||[],left=Math.max(0,m.max-m.score-L.total);
+  return `<tr><td colspan="10"><div class="mxpanel">
+    <div class="row small" style="gap:18px"><span>Marks not scored: <b class="num">${+(m.max-m.score).toFixed(1)}</b></span><span>Logged as mistakes: <b class="num">${L.mist}</b></span><span>Unattempted: <b class="num">${L.unatt}</b></span><span class="${left?"sev2":""}">Not yet explained: <b class="num">${+left.toFixed(1)}</b></span></div>
+    ${(m.mistakes||[]).length?`<div class="tablewrap"><table><tr><th>Q</th><th>Chapter</th><th>Category</th><th class="c">Lost</th><th>Note</th><th></th></tr>${m.mistakes.map(x=>{const ch=chRow(x.cid);return `<tr><td class="num">${esc(x.q||"–")}</td><td class="small">${ch?esc(ch[0]):"General"}</td><td class="small">${esc((CAT[x.cat]||CAT.unclassified).label)}</td><td class="c num">${x.lost}</td><td class="small">${esc(x.note||"")}</td>
+      <td style="white-space:nowrap">${x.tough?'<span class="chip A">In Tough topics</span>':`<button class="ghost" data-act="mxtough" data-m="${m.id}" data-x="${x.id}">To Tough topics</button>`}${x.cat==="unclassified"?`<select aria-label="Classify" data-act="mxcat" data-m="${m.id}" data-x="${x.id}"><option value="">Classify…</option>${MISTAKE_CATS.filter(c=>c[0]!=="unclassified").map(c=>`<option value="${c[0]}">${c[1]}</option>`).join("")}</select>`:""}<button class="ghost danger" data-act="mxdel" data-m="${m.id}" data-x="${x.id}" aria-label="Delete mistake">×</button></td></tr>`}).join("")}</table></div>`:`<p class="small muted" style="margin:0">No mistakes logged for this mock yet. Go through the checked paper and log where each mark went.</p>`}
+    <form id="mxForm" data-m="${m.id}" class="grid" style="grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px">
+      <label class="f">Question<input id="mxQ" placeholder="2(b)" maxlength="12"></label>
+      <label class="f" style="grid-column:span 2">Chapter<select id="mxCh"><option value="">General / not sure</option>${cs.map(r=>`<option value="${r[3]}">${esc(r[0].length>56?r[0].slice(0,54)+"…":r[0])}</option>`).join("")}</select></label>
+      <label class="f" style="grid-column:span 2">What went wrong<select id="mxCat">${MISTAKE_CATS.filter(c=>c[0]!=="unclassified").map(c=>`<option value="${c[0]}">${c[1]}</option>`).join("")}</select></label>
+      <label class="f">Marks lost<input id="mxLost" type="number" step="0.5" min="0.5" max="${m.max}" required></label>
+      <label class="f" style="grid-column:1/-1">Note (optional)<input id="mxNote" placeholder="Forgot the 182-day condition" maxlength="160"></label>
+      <button class="primary" style="grid-column:1/-1">Log mistake</button></form>
+  </div></td></tr>`}
 V.mocks=()=>{
-  const ps=activePapers(), tp=+S.settings.targetPct||75;
-  const stats=ps.map(p=>{const m=S.mocks.filter(x=>x.paper===p.id).sort((a,b)=>a.date<b.date?-1:1);const pct=m.map(x=>x.score/x.max*100);return {p,m,avg:pct.length?pct.reduce((a,b)=>a+b,0)/pct.length:null,best:pct.length?Math.max(...pct):null,last:pct.length?pct[pct.length-1]:null}});
-  const W=640,H=220,pad=32; const all=[...S.mocks].sort((a,b)=>a.date<b.date?-1:1);
-  let chart=`<p class="muted small" style="margin:0">Add a mock score to see your trend against the target line.</p>`;
-  if(all.length){const d0=parse(all[0].date),d1=parse(all[all.length-1].date),span=Math.max(1,diffDays(d0,d1));const x=d=>pad+diffDays(d0,parse(d))/span*(W-pad*2),y=v=>H-pad-(v/100)*(H-pad*1.6);
-    chart=`<div style="overflow-x:auto"><svg viewBox="0 0 ${W} ${H}" width="100%" style="min-width:420px" role="img" aria-label="Mock score trend">
-      ${[0,40,60,80,100].map(v=>`<line x1="${pad}" x2="${W-pad/2}" y1="${y(v)}" y2="${y(v)}" stroke="var(--line)" stroke-width="1"/><text x="${pad-6}" y="${y(v)+3}" text-anchor="end">${v}</text>`).join("")}
-      <line x1="${pad}" x2="${W-pad/2}" y1="${y(tp)}" y2="${y(tp)}" stroke="var(--bad)" stroke-dasharray="4 4" stroke-width="1.5"/><text x="${W-pad/2}" y="${y(tp)-5}" text-anchor="end" style="fill:var(--bad)">target ${tp}%</text>
-      ${stats.map(s=>{if(!s.m.length)return"";const pts=s.m.map(m=>`${x(m.date)},${y(m.score/m.max*100)}`).join(" ");return `<polyline points="${pts}" fill="none" stroke="${col(s.p.id)}" stroke-width="2"/>${s.m.map(m=>`<circle cx="${x(m.date)}" cy="${y(m.score/m.max*100)}" r="3.5" fill="${col(s.p.id)}"/>`).join("")}`}).join("")}
-      <text x="${pad}" y="${H-8}">${fmtShort(d0)}</text><text x="${W-pad/2}" y="${H-8}" text-anchor="end">${fmtShort(d1)}</text>
-    </svg></div><div class="legend">${ps.map(p=>`<span><span class="swatch" style="background:${col(p.id)}"></span>${p.short}</span>`).join("")}</div>`}
-  const grp=g=>{const s=stats.filter(x=>x.p.group===g&&x.last!=null);if(!s.length)return null;const tot=s.reduce((a,b)=>a+b.last,0);return {n:s.length,agg:tot/s.length,min:Math.min(...s.map(x=>x.last))}};
-  const groupCard=g=>{const r=grp(g);if(!r)return"";const pass=r.min>=40&&r.agg>=50;return `<div class="stat"><span class="label">Group ${g===1?"I":"II"} (latest)</span><b>${r.agg.toFixed(1)}%</b><span class="small ${pass?"":"muted"}" style="color:${pass?"var(--good)":"var(--bad)"}">${pass?"Pass pace":"Below pass rule"} · lowest ${r.min.toFixed(0)}</span></div>`};
+  const ps=activePapers(),tp=+S.settings.targetPct||75;if(mkPaper!=="all"&&!ps.some(p=>p.id===mkPaper))mkPaper="all";
+  const list=mocksIn(mkPaper),sm=mockSummary(list),scopePs=mkPaper==="all"?ps:[paperOf(mkPaper)],recent=list.slice(-5),LT=lossTotals(recent);
+  const latestPer=scopePs.map(p=>mocksFor(p.id).pop()).filter(Boolean),recs=latestPer.map(m=>({m,r:recoverable(m)})),recTot=recs.reduce((a,x)=>a+x.r.rec,0);
+  const stats=ps.map(p=>({p,s:mockSummary(mocksFor(p.id))}));
+  const grp=g=>{const lat=ps.filter(p=>p.group===g).map(p=>{const m=mocksFor(p.id);return m.length?pctOf(m[m.length-1]):null}).filter(x=>x!=null);if(!lat.length)return null;return {agg:lat.reduce((a,b)=>a+b,0)/lat.length,min:Math.min(...lat)}};
+  const groupCard=g=>{const r=grp(g);if(!r)return"";const pass=r.min>=40&&r.agg>=50;return `<div class="stat"><span class="label">Group ${g===1?"I":"II"} (latest)</span><b>${r.agg.toFixed(1)}%</b><span class="small" style="color:${pass?"var(--good)":"var(--bad)"}">${pass?"Pass pace":"Below pass rule"} · lowest ${r.min.toFixed(0)}</span></div>`};
+  const f1=v=>v==null?"–":(Math.round(v*10)/10)+"";
+  const tile=(l,v,sub)=>`<div class="tile"><span class="label">${l}</span><b>${v}</b><span class="sub">${sub}</span></div>`;
+  const me=mockEdit&&S.mocks.find(m=>m.id===mockEdit),sel=me?me.paper:(mkPaper!=="all"?mkPaper:mockForm.paper);
+  const dimRows=DIMS.map(([k,l])=>[l,LT.byDim[k]||0,LT.max?`${((LT.byDim[k]||0)/LT.max*100).toFixed(1)}% of marks`:""]).sort((a,b)=>b[1]-a[1]),dimMax=Math.max(0,...dimRows.map(r=>r[1]));
+  const catRows=MISTAKE_CATS.map(([k,l])=>[l,LT.byCat[k]||0]).filter(r=>r[1]>0).concat(LT.unatt?[["Unattempted questions",LT.unatt]]:[]).sort((a,b)=>b[1]-a[1]),catMax=Math.max(0,...catRows.map(r=>r[1]));
+  const chW=chapterLosses(list).slice(0,6),repM=repeatedMistakes(list);
   return `
   <div class="row between"><h2>Mock tests</h2><div class="row"><span class="small muted">Target for a rank: ${tp}%+ in every paper</span><a class="btn" href="#evaluate" style="text-decoration:none">Have Claude mark an answer sheet</a></div></div>
+  <div class="pills"><button class="${mkPaper==="all"?"on":""}" data-act="mkp" data-p="all">All papers</button>${ps.map(p=>`<button class="${mkPaper===p.id?"on":""}" data-act="mkp" data-p="${p.id}">${p.short} <span class="num small">${mocksFor(p.id).length}</span></button>`).join("")}</div>
+  <div class="tiles">
+    ${tile("Mocks",sm?sm.n:0,mkPaper==="all"?"all papers":paperOf(mkPaper).short)}
+    ${tile("Average",sm?Math.round(sm.avg)+"%":"–","of all mocks here")}
+    ${tile("Last three",sm?sm.last3.map(v=>Math.round(v)).join(" · "):"–","% oldest to newest")}
+    ${tile("Best / worst",sm?Math.round(sm.best)+" / "+Math.round(sm.worst):"–","%")}
+    ${tile("Latest change",sm&&sm.change!=null?(sm.change>=0?"+":"")+f1(sm.change):"–",sm&&sm.change!=null?`points vs previous ${paperOf(sm.latest.paper).short} mock`:"needs two mocks of a paper")}
+    ${tile("Unattempted",sm?f1(sm.unattAvg):"–","marks per mock, on average")}
+    ${tile("Recoverable",latestPer.length?"+"+f1(recTot):"–",latestPer.length?"marks on the latest mock"+(latestPer.length>1?"s":""):"log mistakes to estimate")}
+    ${tile("Logged losses",LT.total?f1(LT.total):"–",`marks in the last ${recent.length} mock${recent.length===1?"":"s"}`)}
+  </div>
   <div class="grid g2">
-    <div class="card"><div class="label">Trend</div>${chart}</div>
-    ${(()=>{const me=mockEdit&&S.mocks.find(m=>m.id===mockEdit),sel=me?me.paper:mockForm.paper;return `<div class="card"><div class="label">${me?"Edit score":"Add a score"}</div>
-      <form id="mockForm" class="grid" style="grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px">
+    <div class="card"><div class="label">Trend</div>${mockChart(list,scopePs,tp)}</div>
+    <div class="card"><div class="label">${me?"Edit mock":"Add a mock"}</div>
+      <form id="mockForm" class="grid" style="grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:10px">
         <label class="f">Paper<select id="mPaper">${PAPERS.filter(p=>ps.includes(p)||p.id===sel).map(p=>`<option value="${p.id}" ${sel===p.id?"selected":""}>${p.short}</option>`).join("")}</select></label>
+        <label class="f">Mock no.<input id="mNum" maxlength="20" placeholder="MTP 1" value="${me?esc(me.num||""):""}"></label>
         <label class="f">Date<input type="date" id="mDate" value="${me?me.date:todayISO()}" max="${todayISO()}" required></label>
         <label class="f">Marks<input type="number" id="mScore" min="0" step="0.5" placeholder="62" value="${me?me.score:""}" required></label>
         <label class="f">Out of<input type="number" id="mMax" value="${me?me.max:100}" min="1" step="0.5" required></label>
-        <label class="f" style="grid-column:1/-1">Source<input id="mSrc" placeholder="ICAI MTP Series I, coaching test series, PYQ May 2025…" value="${me?esc(me.src||""):""}"></label>
-        <button class="primary" style="grid-column:1/-1">${me?"Update score":"Save score"}</button>
+        <label class="f">Time taken (min)<input type="number" id="mTime" min="0" max="600" step="1" placeholder="180" value="${me&&me.timeMins!=null?me.timeMins:""}"></label>
+        <label class="f">Questions attempted<input type="number" id="mQa" min="0" max="99" step="1" value="${me&&me.qAtt!=null?me.qAtt:""}"></label>
+        <label class="f">Not attempted<input type="number" id="mQu" min="0" max="99" step="1" value="${me&&me.qUnatt!=null?me.qUnatt:""}"></label>
+        <label class="f">Marks left unattempted<input type="number" id="mUm" min="0" step="0.5" value="${me&&me.unattMarks!=null?me.unattMarks:""}"></label>
+        <label class="f">Difficulty<select id="mDiff"><option value="">–</option>${DIFF.map(d=>`<option ${me&&me.diff===d?"selected":""}>${d}</option>`).join("")}</select></label>
+        <label class="f" style="grid-column:1/-1">Source<input id="mSrc" placeholder="ICAI MTP Series I, coaching test series, past paper May 2025…" value="${me?esc(me.src||""):""}"></label>
+        <button class="primary" style="grid-column:1/-1">${me?"Update mock":"Save mock"}</button>
         ${me?`<button type="button" style="grid-column:1/-1" data-act="mockcancel">Cancel editing</button>`:""}
-      </form>`})()}
+      </form>
       <div class="row" style="gap:24px">${groupCard(1)}${groupCard(2)}</div>
-      <p class="small muted" style="margin:0">ICAI pass rule: at least 40 in each paper and 50% aggregate per group. 60+ in a paper earns an exemption. Group figures use each paper's latest mock.</p>
+      <p class="small muted" style="margin:0">ICAI pass rule: at least 40 in each paper and 50% aggregate per group; 60+ in a paper earns an exemption. After saving, open <b>Mistakes</b> on the mock to log where marks went.</p>
     </div>
   </div>
-  <div class="tablewrap"><table><tr><th>Paper</th><th class="c">Mocks</th><th class="c">Average (all)</th><th class="c">Best</th><th class="c">Latest</th><th class="c">Gap to target</th></tr>
-    ${stats.map(s=>`<tr><td><span class="row" style="gap:6px"><span class="swatch" style="background:${col(s.p.id)}"></span>${s.p.short}</span></td><td class="c num">${s.m.length}</td><td class="c num">${s.avg==null?"–":s.avg.toFixed(1)}</td><td class="c num">${s.best==null?"–":s.best.toFixed(1)}</td><td class="c num">${s.last==null?"–":s.last.toFixed(1)}</td><td class="c num" style="color:${s.last==null?"inherit":s.last>=tp?"var(--good)":"var(--warn)"}">${s.last==null?"–":(s.last>=tp?"on target":"−"+(tp-s.last).toFixed(1))}</td></tr>`).join("")}
+  <div class="grid g2">
+    <div class="card"><div class="row between"><div class="label">Where marks go: six skills</div><span class="small muted">last ${recent.length} mock${recent.length===1?"":"s"}</span></div>
+      ${LT.total?lossBars(dimRows,dimMax,v=>f1(v)+" m"):`<p class="small muted" style="margin:0">Log mistakes on a mock to see which skills cost you marks: concepts, application, calculation, presentation, time or recall.</p>`}
+      ${LT.byCat.unclassified?`<p class="small sev2" style="margin:0">${f1(LT.byCat.unclassified)} marks aren't classified yet, so they're not counted above. Classify them in the mock's Mistakes.</p>`:""}</div>
+    <div class="card"><div class="row between"><div class="label">Marks lost by mistake type</div><span class="small muted">last ${recent.length} mock${recent.length===1?"":"s"}</span></div>
+      ${catRows.length?lossBars(catRows,catMax,v=>f1(v)+" m"):`<p class="small muted" style="margin:0">No mistakes or unattempted marks logged yet.</p>`}</div>
+  </div>
+  <div class="grid g2">
+    <div class="card"><div class="label">Recoverable marks</div>
+      ${!latestPer.length?`<p class="small muted" style="margin:0">Add a mock and log its mistakes to estimate how many marks are realistically recoverable.</p>`
+        :latestPer.length>1?`<div class="tablewrap"><table><tr><th>Latest mock</th><th class="c">Score</th><th class="c">Recoverable</th><th class="c">If fixed</th></tr>${recs.map(({m,r})=>`<tr><td><span class="row" style="gap:6px"><span class="swatch" style="background:${col(m.paper)}"></span>${paperOf(m.paper).short} <span class="small muted">${fmtShort(parse(m.date))}</span></span></td><td class="c num">${m.score}/${m.max}</td><td class="c num">+${f1(r.rec)}</td><td class="c num">${f1(r.projected)}</td></tr>`).join("")}</table></div>`
+        :(()=>{const {m,r}=recs[0];return `<p class="small" style="margin:0">${paperOf(m.paper).short} ${m.num?esc(m.num)+" ":""}on ${fmt(m.date)}: <b>${m.score}/${m.max}</b>. Fixing what's realistic would make it about <b>${f1(r.projected)}</b>.</p>
+          ${Object.entries(RECOVER).map(([k,R])=>`<div class="lossrow"><span><b>${R.label}</b> <span class="muted small">· ${f1(r.buckets[k].lost)} lost × ${Math.round(R.rate*100)}%</span></span><span class="num">+${f1(r.buckets[k].rec)}</span><div class="mini"><i style="width:${(()=>{const mx=Math.max(...Object.values(r.buckets).map(z=>z.lost));return mx?r.buckets[k].lost/mx*100:0})()}%;background:var(--accent)"></i></div></div>`).join("")}
+          ${r.L.unknown?`<p class="small sev2" style="margin:0">${f1(r.L.unknown)} lost marks aren't logged yet, so the estimate leaves them out.</p>`:""}`})()}
+      <details class="small"><summary class="muted" style="cursor:pointer">Assumptions</summary><div class="prose" style="margin-top:6px">${Object.values(RECOVER).map(R=>`<p><b>${R.label} (${Math.round(R.rate*100)}%)</b>: ${R.note}</p>`).join("")}<p>Unattempted marks count as "needs more practice". These rates are rules of thumb for planning, not predictions of your next score.</p></div></details>
+    </div>
+    <div class="card"><div class="label">Chapters costing marks</div>
+      ${chW.length?`<div class="tablewrap"><table><tr><th>Chapter</th><th class="c">Mocks</th><th class="c">Lost</th><th>Mostly</th></tr>${chW.map(e=>{const ch=chRow(e.cid),top=Object.entries(e.cats).sort((a,b)=>b[1]-a[1])[0];return `<tr><td class="small"><span class="swatch" style="background:${col(e.paper)}"></span> ${ch?esc(ch[0]):"–"}</td><td class="c num">${e.n}</td><td class="c num">${f1(e.lost)}</td><td class="small">${esc((CAT[top[0]]||CAT.unclassified).label)}</td></tr>`}).join("")}</table></div>`:`<p class="small muted" style="margin:0">Pick a chapter when you log a mistake to see which chapters cost the most marks.</p>`}
+      <span class="label">Repeated mistakes</span>
+      ${repM.length?repM.slice(0,5).map(r=>{const ch=chRow(r.cid);return `<div class="small"><span class="chip warn">${r.n} mocks</span> ${esc(CAT[r.cat].label)} in <b>${ch?esc(ch[0]):"–"}</b> · ${f1(r.lost)} marks</div>`}).join(""):`<p class="small muted" style="margin:0">None yet. A mistake shows here when the same type repeats in the same chapter across two or more mocks.</p>`}
+    </div>
+  </div>
+  <div class="tablewrap"><table><tr><th>Paper</th><th class="c">Mocks</th><th class="c">Average</th><th class="c">Last three</th><th class="c">Best</th><th class="c">Worst</th><th class="c">Latest</th><th class="c">Change</th><th class="c">Gap to target</th></tr>
+    ${stats.map(({p,s:x})=>`<tr><td><span class="row" style="gap:6px"><span class="swatch" style="background:${col(p.id)}"></span>${p.short}</span></td><td class="c num">${x?x.n:0}</td><td class="c num">${x?f1(x.avg):"–"}</td><td class="c num small">${x?x.last3.map(v=>Math.round(v)).join(" · "):"–"}</td><td class="c num">${x?f1(x.best):"–"}</td><td class="c num">${x?f1(x.worst):"–"}</td><td class="c num">${x?f1(pctOf(x.latest)):"–"}</td>
+      <td class="c num" style="color:${x&&x.change!=null?(x.change>=0?"var(--good)":"var(--bad)"):"inherit"}">${x&&x.change!=null?(x.change>=0?"+":"")+f1(x.change):"–"}</td><td class="c num" style="color:${!x?"inherit":pctOf(x.latest)>=tp?"var(--good)":"var(--warn)"}">${!x?"–":pctOf(x.latest)>=tp?"on target":"−"+f1(tp-pctOf(x.latest))}</td></tr>`).join("")}
   </table></div>
-  ${S.mocks.length?`<div class="tablewrap"><table><tr><th>Date</th><th>Paper</th><th class="c">Score</th><th>Source</th><th></th></tr>${[...S.mocks].sort((a,b)=>a.date<b.date?1:-1).map(m=>`<tr><td class="num small">${fmt(m.date)}</td><td>${paperOf(m.paper).short}</td><td class="c num">${m.score}/${m.max}</td><td class="small">${esc(m.src||"")}</td><td><button class="ghost" data-act="editmock" data-id="${m.id}">Edit</button><button class="ghost" data-act="delmock" data-id="${m.id}" aria-label="Delete mock">×</button></td></tr>`).join("")}</table></div>`:""}`;
+  ${list.length?`<div class="tablewrap"><table><tr><th>Date</th><th>Paper</th><th>Mock</th><th class="c">Score</th><th class="c">Change</th><th class="c">Difficulty</th><th class="c">Time</th><th class="c">Mistakes</th><th>Source</th><th></th></tr>
+    ${list.slice().reverse().map(m=>{const L=mockLost(m),ch=mockChange(m);return `<tr><td class="num small">${fmt(m.date)}</td><td>${paperOf(m.paper).short}</td><td class="small">${esc(m.num||"–")}</td><td class="c num">${m.score}/${m.max} <span class="small muted">${Math.round(pctOf(m))}%</span></td>
+      <td class="c num small" style="color:${ch==null?"inherit":ch>=0?"var(--good)":"var(--bad)"}">${ch==null?"–":(ch>=0?"+":"")+f1(ch)}</td><td class="c small">${esc(m.diff||"–")}</td><td class="c num small">${m.timeMins!=null&&m.timeMins!==""?fmtMins(+m.timeMins):"–"}</td>
+      <td class="c num small">${(m.mistakes||[]).length?`${m.mistakes.length} · ${f1(L.mist)} m`:"–"}</td><td class="small">${esc(m.src||"")}</td>
+      <td style="white-space:nowrap"><button class="ghost" data-act="mkmist" data-id="${m.id}">${mkOpen===m.id?"Close":"Mistakes"}</button><button class="ghost" data-act="editmock" data-id="${m.id}">Edit</button><button class="ghost" data-act="delmock" data-id="${m.id}" aria-label="Delete mock">×</button></td></tr>${mkOpen===m.id?mistakePanel(m):""}`}).join("")}</table></div>`:""}`;
 };
-
 V.hours=()=>{
   const weeks=18, t=new Date(), end=addDays(t,6-((t.getDay()+6)%7)), start=addDays(end,-weeks*7+1);
   let cells="";for(let i=0;i<weeks*7;i++){const d=addDays(start,i),k=iso(d),h=hoursOn(k);const tg=dayTarget(d)||1,r=h/tg;const l=h===0?"":r<.5?"l1":r<.75?"l2":r<1?"l3":"l4";cells+=`<i class="${l} ${k===todayISO()?"today":""}" title="${fmtShort(d)}: ${h.toFixed(1)} h" style="${d>t?"opacity:.35":""}"></i>`}
@@ -1793,6 +1909,12 @@ document.addEventListener("click",e=>{
     if(a==="delmock"){S.mocks=S.mocks.filter(m=>m.id!==b.dataset.id);if(mockEdit===b.dataset.id)mockEdit=null;save();render();return}
     if(a==="editmock"){mockEdit=b.dataset.id;render();const f=document.getElementById("mockForm");if(f)f.scrollIntoView({block:"center"});return}
     if(a==="mockcancel"){mockEdit=null;render();return}
+    if(a==="mkp"){mkPaper=b.dataset.p;mkOpen=null;render();return}
+    if(a==="mkmist"){mkOpen=mkOpen===b.dataset.id?null:b.dataset.id;render();return}
+    if(a==="mxdel"){const m=S.mocks.find(z=>z.id===b.dataset.m);if(m){m.mistakes=(m.mistakes||[]).filter(x=>x.id!==b.dataset.x);save();render()}return}
+    if(a==="mxtough"){const m=S.mocks.find(z=>z.id===b.dataset.m),x=m&&(m.mistakes||[]).find(y=>y.id===b.dataset.x);if(!x)return;
+      jPut({id:"j"+Date.now().toString(36),p:m.paper,cid:x.cid||null,topic:`${m.num||m.src||"Mock"} Q${x.q||"?"}: ${(CAT[x.cat]||CAT.unclassified).label}${x.note?" · "+x.note:""}`.slice(0,140),kind:"Mock mistake",why:`${x.lost} marks lost on ${fmt(m.date)}.${x.note?" "+x.note:""}`,created:todayISO(),box:0,due:iso(addDays(new Date(),1)),reviews:[],mastered:false,clicked:"",card:null});
+      x.tough=true;save();render();toast("Added to Tough topics. First review tomorrow.");return}
     if(a==="dismissNotice"){notice("");return}
     if(a==="warnall"){warnAll=!warnAll;render();return}
     if(a==="rdy"){readyOpen=readyOpen===b.dataset.p?null:b.dataset.p;render();return}
@@ -1804,6 +1926,7 @@ document.addEventListener("change",e=>{
   if(a==="stage"){const cl=setStage(b.dataset.k,b.dataset.s,b.checked);save();render();if(cl.length)toast("Later stages were cleared too: "+cl.map(x=>STAGES.find(y=>y[0]===x)[1]).join(", "))}
   if(a==="todo"){S.todos[todayISO()][+b.dataset.i].done=b.checked;save();render()}
   if(a==="jpaper"){const pid=b.value;jPrefill={p:pid,cid:""};const sel=document.getElementById("jCh");if(sel)sel.innerHTML='<option value="">General</option>'+CH[pid].map(c=>`<option value="${c[3]}">${esc(c[0].length>60?c[0].slice(0,58)+"…":c[0])}</option>`).join("");return}
+  if(a==="mxcat"){const m=S.mocks.find(z=>z.id===b.dataset.m),x=m&&(m.mistakes||[]).find(y=>y.id===b.dataset.x);if(x&&b.value){x.cat=b.value;save();render();toast("Classified")}return}
   if(a==="tpaper"){tForm.p=b.value;tForm.cid="";const sel=document.getElementById("tCh");if(sel)sel.innerHTML='<option value="">Any chapter</option>'+CH[b.value].map(r=>`<option value="${r[3]}">${esc(r[0].length>50?r[0].slice(0,48)+"…":r[0])}</option>`).join("");return}
   if(a==="jclick"){const e=J.find(x=>x.id===b.dataset.id);if(e){e.clicked=b.value;jPut(e)}return}
   if(a==="fill"){const dd=defaultDates(b.value);for(const k in dd){const el=document.getElementById("ex-"+k);if(el)el.value=dd[k]}return}
@@ -1816,11 +1939,20 @@ document.addEventListener("change",e=>{
 document.addEventListener("submit",e=>{
   e.preventDefault();const f=e.target.id,v=id=>document.getElementById(id).value;
   if(f==="todoForm"){const t=v("todoIn").trim();if(!t)return;const d=todayISO();(S.todos[d]=S.todos[d]||[]).push({t,done:false});save();render();document.getElementById("todoIn").focus()}
-  if(f==="mockForm"){const sc=parseFloat(v("mScore")),mx=parseFloat(v("mMax")),d=v("mDate");
+  if(f==="mockForm"){const sc=parseFloat(v("mScore")),mx=parseFloat(v("mMax")),d=v("mDate"),opt=(id,lo,hi,int)=>{const t=v(id).trim();if(t==="")return null;const n=+t;return Number.isFinite(n)&&n>=lo&&n<=hi&&(!int||Number.isInteger(n))?n:NaN};
     if(!(mx>0)){toast("Enter the total marks for this mock");return}if(isNaN(sc)||sc<0||sc>mx){toast("Enter marks between 0 and "+mx);return}if(!d||d>todayISO()){toast("Pick the date you wrote it (not a future date)");return}
-    const rec={paper:v("mPaper"),date:d,score:sc,max:mx,src:v("mSrc").trim()};mockForm.paper=rec.paper;
-    const ex=mockEdit&&S.mocks.find(m=>m.id===mockEdit);if(ex){Object.assign(ex,rec);mockEdit=null;toast("Score updated")}else{S.mocks.push(Object.assign({id:"m"+Date.now().toString(36)+Math.random().toString(36).slice(2,5)},rec));toast("Score saved")}
+    const tm=opt("mTime",0,600,true),qa=opt("mQa",0,99,true),qu=opt("mQu",0,99,true),um=opt("mUm",0,mx-sc,false);
+    if([tm,qa,qu].some(x=>Number.isNaN(x))){toast("Time and question counts must be whole numbers (time up to 600 min)");return}
+    if(Number.isNaN(um)){toast(`Unattempted marks must be between 0 and ${mx-sc} (the marks you didn't get)`);return}
+    const ex=mockEdit&&S.mocks.find(m=>m.id===mockEdit);
+    if(ex){const lostM=(ex.mistakes||[]).reduce((a,x)=>a+(+x.lost||0),0);if(lostM+(um||0)>mx-sc+1e-9){toast(`Logged mistakes (${lostM}) plus unattempted marks can't exceed the ${mx-sc} marks you didn't get. Remove some mistakes first.`);return}}
+    const rec={paper:v("mPaper"),num:v("mNum").trim(),date:d,score:sc,max:mx,timeMins:tm,qAtt:qa,qUnatt:qu,unattMarks:um,diff:v("mDiff")||null,src:v("mSrc").trim()};mockForm.paper=rec.paper;
+    if(ex){if(ex.paper!==rec.paper)(ex.mistakes||[]).forEach(x=>{if(x.cid&&!CH[rec.paper].some(r=>r[3]===x.cid))x.cid=null});Object.assign(ex,rec);mockEdit=null;toast("Mock updated")}
+    else{const id="m"+Date.now().toString(36)+Math.random().toString(36).slice(2,5);S.mocks.push(Object.assign({id,mistakes:[]},rec));mkOpen=id;toast("Saved. Log its mistakes below to see where the marks went.")}
     save();render();return}
+  if(f==="mxForm"){const m=S.mocks.find(z=>z.id===e.target.dataset.m);if(!m)return;const lost=parseFloat(v("mxLost"));if(!(lost>0)){toast("Enter the marks lost");return}
+    const L=mockLost(m),room=m.max-m.score-L.total;if(lost>room+1e-9){toast(room>0?`Only ${+room.toFixed(1)} marks are left to explain on this mock`:"Every lost mark on this mock is already explained");return}
+    m.mistakes=(m.mistakes||[]).concat([{id:"x"+Date.now().toString(36),q:v("mxQ").trim(),cid:v("mxCh")||null,cat:v("mxCat"),lost,note:v("mxNote").trim()}]);save();render();toast("Mistake logged");return}
   if(f==="logForm"){const d=v("lDate"),h=parseFloat(v("lHrs"));if(!d||isNaN(h)||h<0){toast("Pick a date and enter hours");return}if(d>todayISO()){toast("Hours can't be logged for a future date");return}const capped=addHours(d,v("lPaper"),h,v("lMode"));save();render();toast(capped?"Saved, capped so the day stays within 24 hours":"Hours saved")}
   if(f==="jForm"){const t=v("jT").trim();if(!t){toast("Enter the topic");return}const e={id:"j"+Date.now().toString(36),p:v("jP"),cid:v("jCh")||null,topic:t,kind:v("jK"),why:v("jW").trim(),created:todayISO(),box:0,due:iso(addDays(new Date(),1)),reviews:[],mastered:false,clicked:"",card:null};jPrefill={p:e.p,cid:""};jPut(e);jOpen=e.id;jFilter="active";render();toast("Added. First review tomorrow.");return}
   if(f==="examForm"){const dd={};for(const p of PAPERS){const x=v("ex-"+p.id);if(!x){toast("Enter a date for "+p.short);return}dd[p.id]=x}
