@@ -132,7 +132,12 @@ svg text{fill:var(--muted);font-family:var(--mono);font-size:10px}
 .legend{display:flex;gap:12px;flex-wrap:wrap;font-size:.8rem}
 .legend span{display:inline-flex;align-items:center;gap:5px}
 @media (max-width:560px){.paperline{grid-template-columns:4.5rem 1fr 2.8rem}.grow{grid-template-columns:5.5rem 1fr}.count b{font-size:1.25rem}}
-@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+@keyframes inR{from{transform:translateX(36px);opacity:.3}to{transform:none;opacity:1}}
+@keyframes inL{from{transform:translateX(-36px);opacity:.3}to{transform:none;opacity:1}}
+main.swipe-next{animation:inR .22s ease-out}
+main.swipe-prev{animation:inL .22s ease-out}
+main{touch-action:pan-y pinch-zoom}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}main.swipe-next,main.swipe-prev{animation:none}}
 </style>
 
 <header class="top">
@@ -1155,7 +1160,20 @@ function render(){
   document.getElementById("main").innerHTML=`<section class="view">${V[view]()}</section>`;
   if(aid){const el=document.getElementById(aid);if(el){el.focus();try{el.setSelectionRange(pos,pos)}catch(e){}}}
 }
-function route(){const h=location.hash.replace("#","");view=V[h]?h:"today";render()}
+function route(){const h=location.hash.replace("#","");const prev=view;view=V[h]?h:"today";render();
+  if(prev!==view){const nav=document.getElementById("tabs"),a=nav.querySelector("a.on");if(a)nav.scrollTo({left:a.offsetLeft-nav.clientWidth/2+a.offsetWidth/2,behavior:"smooth"})}}
+/* swipe left / right anywhere on the page to move between sections */
+const ORDER=()=>Array.from(document.querySelectorAll("#tabs a")).map(a=>a.dataset.v);
+function go(dir){const o=ORDER(),i=o.indexOf(view),n=i+dir;if(n<0||n>=o.length)return;
+  const m=document.getElementById("main");m.classList.remove("swipe-next","swipe-prev");void m.offsetWidth;
+  location.hash=o[n];window.scrollTo(0,0);m.classList.add(dir>0?"swipe-next":"swipe-prev")}
+function inScroller(el){for(;el&&el!==document.body;el=el.parentElement){if(/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName))return true;const ox=getComputedStyle(el).overflowX;if((ox==="auto"||ox==="scroll")&&el.scrollWidth>el.clientWidth+2)return true}return false}
+let sw=null;
+document.addEventListener("touchstart",e=>{if(e.touches.length!==1||inScroller(e.target)){sw=null;return}const t=e.touches[0];sw={x:t.clientX,y:t.clientY,t:Date.now()}},{passive:true});
+document.addEventListener("touchend",e=>{if(!sw)return;const t=e.changedTouches[0],dx=t.clientX-sw.x,dy=t.clientY-sw.y,dt=Date.now()-sw.t;sw=null;
+  if(Math.abs(dx)>70&&Math.abs(dx)>Math.abs(dy)*1.8&&dt<800){if(window.getSelection&&String(window.getSelection()).length)return;go(dx<0?1:-1)}},{passive:true});
+document.addEventListener("touchcancel",()=>{sw=null},{passive:true});
+function swipeHint(){try{if(!("ontouchstart" in window)||localStorage.getItem(LS+".swipeHint"))return;localStorage.setItem(LS+".swipeHint","1")}catch(e){return}setTimeout(()=>toast("Tip: swipe left or right to switch sections"),900)}
 window.addEventListener("hashchange",route);
 let tt;function toast(m){const t=document.getElementById("toast");t.textContent=m;t.classList.add("show");clearTimeout(tt);tt=setTimeout(()=>t.classList.remove("show"),1800)}
 function touch(k){S.ch[k]=Object.assign({},S.ch[k],{last:todayISO()})}
@@ -1209,6 +1227,7 @@ document.addEventListener("submit",e=>{
 
 route();
 initSync();
+swipeHint();
 </script>
 
 </html>
