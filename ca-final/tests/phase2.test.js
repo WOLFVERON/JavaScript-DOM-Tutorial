@@ -93,17 +93,34 @@ async function open(b, st, journal, hash = 'today', vp = {width: 1280, height: 9
     const p = await open(b, state({ch, settings: {startDate: ymd(-20)}}), j);
     const P = await p.evaluate(() => priorities());
     const kinds = P.list.map(x => x.kind);
-    ok('priorities: 3 to 5 tasks', P.list.length >= 3 && P.list.length <= 5, kinds);
+    ok('priorities: weekday plan adds up to the 2.5 h target', P.mins === 150 && P.target === 150 && P.list.length >= 2 && P.list.length <= 5, {mins: P.mins, n: P.list.length});
+    ok('priorities: a task that does not fit becomes a partial session', P.list.filter(x => x.part).length <= 1 && P.list.every(x => !x.part || (x.mins < x.full && x.mins >= 20)), P.list.map(x => [x.kind, x.mins, x.full]));
     ok('priorities: due tough topics come first as a review', kinds.includes('Review') && P.list.find(x => x.kind === 'Review').t === 'Review 2 tough topics', kinds);
     ok('priorities: first-reading phase always includes new reading', kinds.includes('Learn'), kinds);
-    ok('priorities: no more than 2 tasks of one kind', ['Revise', 'Learn', 'Practise', 'Mock'].every(k => kinds.filter(x => x === k).length <= 2), kinds);
+    ok('priorities: no more than 2 tasks of one kind on a weekday', ['Revise', 'Learn', 'Practise', 'Mock'].every(k => kinds.filter(x => x === k).length <= 2), kinds);
     ok('priorities: every task has paper context, duration, reason and benefit', P.list.every(x => x.mins > 0 && x.why && x.gain && x.level), P.list);
     await p.click('button[data-act="priadd"][data-i="0"]'); await p.click('button[data-act="priall"]');
     const todos = await p.evaluate(() => S.todos[todayISO()].map(t => t.t));
     ok('priorities: add to tasks, and add all without duplicates', todos.length === P.list.length && new Set(todos).size === todos.length, todos);
     const mock = await p.evaluate(() => { S.ch = {}; for (let i = 0; i < 18; i++) S.ch['fr-' + i] = {r: true, last: todayISO(), hist: []}; J.length = 0; S.settings.tWd = 8; S.settings.tWe = 8; return priorities().list.map(x => x.kind + ':' + x.t) });
     ok('priorities: suggests a mock when a paper is well covered but has none', mock.some(x => /^Mock:Write a full FR mock/.test(x)), mock);
+    const wk = await p.evaluate(() => { S.settings.tWd = 8; S.settings.tWe = 8; const r = priorities(); S.settings.tWd = 2.5; S.settings.tWe = 8; return {mins: r.mins, n: r.list.length} });
+    ok('priorities: 8-hour day plan adds up to 8 h with more tasks', wk.mins === 480 && wk.n >= 4 && wk.n <= 7, wk);
+    const off = await p.evaluate(() => { J.push({id: 'z', p: 'fr', topic: 'Z', reviews: [], mastered: false, due: todayISO(), box: 0}); S.settings.tWd = 0; S.settings.tWe = 0; const r = priorities(); S.settings.tWd = 2.5; S.settings.tWe = 8; J.pop(); return r.list.map(x => x.kind) });
+    ok('priorities: on a 0-hour day only due reviews are suggested', off.length === 1 && off[0] === 'Review', off);
+    const fresh = await p.evaluate(() => { S.ch = {}; J.length = 0; S.settings.tWd = 8; S.settings.tWe = 8; const r = priorities(); return {mins: r.mins, kinds: r.list.map(x => x.kind)} });
+    ok('priorities: brand-new user still gets a full day of reading, no practice on unread papers', fresh.mins === 480 && fresh.kinds.every(k => k === 'Learn'), fresh);
     ok('priorities: no errors', !p.errs.length, p.errs); await p.close();
+  }
+
+  /* 5b. focus timer logs from 1 minute */
+  {
+    const p = await open(b, state({}), null);
+    const r = await p.evaluate(() => { const t0 = Date.now(); timer = {p: 'fr', start: t0 - 61000}; render(); document.querySelector('button[data-act="tstop"]').click(); const a = hoursOn(todayISO());
+      timer = {p: 'fr', start: Date.now() - 50000}; render(); document.querySelector('button[data-act="tstop"]').click(); const b2 = hoursOn(todayISO()); return {a, b2, toast: document.getElementById('toast').textContent} });
+    ok('timer: a 1-minute session is logged (about 0.017 h)', Math.abs(r.a - 1 / 60) < 0.002, r);
+    ok('timer: under 1 minute logs nothing and says so', r.b2 === r.a && /Under 1 minute/.test(r.toast), r);
+    await p.close();
   }
 
   /* 6. readiness breakdown in the UI matches the score */

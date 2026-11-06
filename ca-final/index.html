@@ -559,7 +559,7 @@ const TK=LS+".timer"; let timer=store.get(TK,null); if(timer&&!(isFinite(timer.s
 function splitSession(a,b){const out={};let s=a;while(s<b){const d=new Date(s),nx=new Date(d.getFullYear(),d.getMonth(),d.getDate()+1).getTime(),e=Math.min(b,nx);out[iso(d)]=(out[iso(d)]||0)+(e-s)/36e5;s=e}return out}
 /* add (or set) hours for a paper on a day; a day never exceeds 24 hours. Returns true when capped. */
 function addHours(day,p,h,mode){const l=Object.assign({},S.log[day]),cur=+l[p]||0,others=Object.entries(l).filter(([k])=>k!==p).reduce((a,[,v])=>a+(+v||0),0);
-  const want=mode==="set"?h:cur+h;const v=Math.round(Math.max(0,Math.min(24-others,want))*100)/100;
+  const want=mode==="set"?h:cur+h;const v=Math.round(Math.max(0,Math.min(24-others,want))*1000)/1000;
   if(v>0)l[p]=v;else delete l[p];if(Object.keys(l).length)S.log[day]=l;else delete S.log[day];return v<want-1e-9}
 function mmss(ms){const s=Math.floor(ms/1000),h=Math.floor(s/3600),m=Math.floor(s%3600/60),x=s%60;return (h?h+":":"")+String(m).padStart(2,"0")+":"+String(x).padStart(2,"0")}
 function timerHTML(){
@@ -1102,16 +1102,32 @@ function priorities(){
   ps.forEach(p=>{const m=mocksFor(p.id),last=m[m.length-1],age=last?diffDays(parse(last.date),tt):null,cov=paperReadiness(p.id).comp.coverage;
     const mockTime=(phase>=3&&focus.includes(p.id)&&(age==null||age>=14))||(age==null&&cov>=.6);
     if(mockTime)c.push({score:age==null?72:75,paper:p.id,kind:"Mock",t:`Write a full ${p.short} mock (3 hours)`,mins:180,why:age==null?`You've covered ${Math.round(cov*100)}% of ${p.short} but haven't written a mock, so its readiness is capped at ${NO_MOCK_CAP}.`:`Your last ${p.short} mock was ${age} days ago.`,gain:"Mocks are 25% of readiness and show exactly where marks are lost.",go:"mocks"})});
-  const target=Math.max(60,dayTarget(new Date())*60),pick=[],perPaper={},perKind={};let mins=0;const seen=new Set();
+  /* fill today's target: highest-value tasks first; the last task becomes a partial session if it doesn't fit */
+  const target=Math.round(dayTarget(new Date())*60),big=target>=360,maxN=big?7:5,perCap=big?3:2,kindCap=big?3:2;
+  const SPLIT={Learn:1,Revise:1,Practise:1,Correct:1},pick=[],perPaper={},perKind={},seen=new Set();let left=target;
+  const take=(x,caps)=>{if(left<5&&x.kind!=="Review")return false;const key=x.cid||x.t;if(seen.has(key)||pick.length>=maxN)return false;
+    if(caps){if(x.paper&&x.kind!=="Mock"&&(perPaper[x.paper]||0)>=perCap)return false;if(x.kind!=="Review"&&(perKind[x.kind]||0)>=kindCap)return false}
+    let m=x.mins,part=false;
+    if(m>left){if(!SPLIT[x.kind]||left<20)return false;m=Math.max(20,Math.floor(left/5)*5);part=true}
+    pick.push(Object.assign({},x,{mins:m,full:x.mins,part}));seen.add(key);left-=m;if(x.paper)perPaper[x.paper]=(perPaper[x.paper]||0)+1;perKind[x.kind]=(perKind[x.kind]||0)+1;return true};
   c.sort((a,b)=>b.score-a.score);
-  /* in the first-reading phase, new learning always gets a slot */
-  const learn=phase===1?c.find(x=>x.kind==="Learn"):null;if(learn){pick.push(learn);seen.add(learn.cid);mins+=learn.mins;perPaper[learn.paper]=1;perKind.Learn=1}
-  c.forEach(x=>{if(pick.length>=5)return;const key=x.cid||x.t;if(seen.has(key))return;if(x.paper&&x.kind!=="Mock"&&(perPaper[x.paper]||0)>=2)return;if(x.kind!=="Review"&&(perKind[x.kind]||0)>=2)return;
-    if(pick.length>=3&&x.mins>15&&mins+x.mins>target*1.2)return;pick.push(x);seen.add(key);mins+=x.mins;if(x.paper)perPaper[x.paper]=(perPaper[x.paper]||0)+1;perKind[x.kind]=(perKind[x.kind]||0)+1});
-  if(pick.length<3)c.forEach(x=>{if(pick.length>=3)return;const key=x.cid||x.t;if(seen.has(key))return;pick.push(x);seen.add(key);mins+=x.mins});
+  if(target===0){const r=c.find(x=>x.kind==="Review");if(r){pick.push(Object.assign({},r,{full:r.mins,part:false}));left-=r.mins}}
+  else{
+    const rev=c.find(x=>x.kind==="Review");if(rev)take(rev,true);                         /* due reviews are short and come first */
+    const learn=phase===1?c.find(x=>x.kind==="Learn"):null;if(learn)take(learn,true);   /* first reading always gets a slot */
+    c.forEach(x=>take(x,true));
+    if(left>=15)c.forEach(x=>take(x,false));                                              /* relax variety limits if time is left */
+    if(left>=15&&ps.length&&pick.length<maxN){                                            /* still time: practise the weakest paper */
+      const w=ps.map(p=>({p,r:paperReadiness(p.id)})).filter(x=>x.r.comp.coverage>0).sort((a,b)=>a.r.score-b.r.score)[0];
+      if(w){pick.push({score:50,paper:w.p.id,kind:"Practise",t:`Extra question practice: ${w.p.short} (RTP / MTP / past papers)`,mins:left,full:left,part:false,
+        why:`${w.p.short} has your lowest readiness (${w.r.score}/100) among papers you've started, and nothing more urgent is due today.`,gain:"Uses the rest of today's target where it moves readiness most."});left=0}
+      else{const nx=focus.map(pid=>CH[pid].filter(r=>!(S.ch[r[3]]||{}).r&&!seen.has(r[3])).sort((a,b)=>(PRI_W[b[1]]||1)-(PRI_W[a[1]]||1)).map(r=>({pid,r}))).flat()[0];
+        if(nx){pick.push({score:50,paper:nx.pid,cid:nx.r[3],kind:"Learn",t:`Read ${nx.r[0]}`,mins:left,full:Math.max(left,DUR.learn[nx.r[1]]),part:left<DUR.learn[nx.r[1]],
+          why:`It's the next unread ${paperOf(nx.pid).short} chapter.`,gain:"Uses the rest of today's target on new coverage."});left=0}}}
+  }
   pick.sort((a,b)=>b.score-a.score);
   pick.forEach(x=>{x.level=x.score>=80?"High":x.score>=65?"Medium":"Normal"});
-  return {list:pick,mins,target}}
+  return {list:pick,mins:pick.reduce((a,x)=>a+x.mins,0),target}}
 function overviewStats(){
   const t=parse(todayISO()),ps=activePapers(),plan=buildPlan();let wk=0;for(let i=0;i<7;i++)wk+=hoursOn(iso(addDays(t,-i)));
   const allM=S.mocks.filter(m=>ps.some(p=>p.id===m.paper)).sort((a,b)=>a.date<b.date?-1:1),last3=allM.slice(-3),R=ps.map(p=>paperReadiness(p.id));
@@ -1135,18 +1151,19 @@ function commandStrip(O){const pc=v=>Math.round(v*100)+"%",[bd]=readinessBand(O.
     ${tile("today","Revisions due",O.overdue,O.weakCh+" weak chapter"+(O.weakCh===1?"":"s"))}
     ${tile("plan","Next paper",O.next?diffDays(new Date(),parse(O.next.date))+"<span class=\"small muted\"> days</span>":"–",O.next?O.next.p.short+" · "+fmtShort(parse(O.next.date)):"no upcoming paper")}
   </div>`}
-function priText(x){return `${x.paper?paperOf(x.paper).short+": ":""}${x.t} (~${x.mins} min)`}
+function fmtMins(m){m=Math.round(m);const h=Math.floor(m/60),r=m%60;return h?(r?`${h} h ${r} min`:`${h} h`):`${r} min`}
+function priText(x){return `${x.paper?paperOf(x.paper).short+": ":""}${x.t} (${x.part?fmtMins(x.mins)+" of "+fmtMins(x.full):fmtMins(x.mins)})`}
 function prioritiesCard(P){const tasks=S.todos[todayISO()]||[],has=x=>tasks.some(t=>t.t===priText(x));
-  return `<div class="card"><div class="row between"><div class="label">Today's priorities</div><span class="small muted">~${(P.mins/60).toFixed(1)} h of your ${(P.target/60).toFixed(1)} h target</span></div>
+  return `<div class="card"><div class="row between"><div class="label">Today's priorities</div><span class="small ${Math.abs(P.mins-P.target)<=10?"":"muted"}">${P.target===0?"No study target today":`${fmtMins(P.mins)} planned · today's target ${fmtMins(P.target)}`}</span></div>
     ${P.list.length?P.list.map((x,i)=>`<div class="pri">
-      <div class="row between"><span class="row" style="gap:8px"><span class="kind">${x.kind}</span>${x.paper?`<span class="chip"><span class="swatch" style="background:${col(x.paper)}"></span>${paperOf(x.paper).short}</span>`:""}<span class="small ${x.level==="High"?"sev3":x.level==="Medium"?"sev2":"sev1"}">${x.level}</span></span><span class="num small muted">~${x.mins} min</span></div>
-      <b>${esc(x.t)}</b>
+      <div class="row between"><span class="row" style="gap:8px"><span class="kind">${x.kind}</span>${x.paper?`<span class="chip"><span class="swatch" style="background:${col(x.paper)}"></span>${paperOf(x.paper).short}</span>`:""}<span class="small ${x.level==="High"?"sev3":x.level==="Medium"?"sev2":"sev1"}">${x.level}</span></span><span class="num small muted">${fmtMins(x.mins)}</span></div>
+      <b>${esc(x.t)}</b>${x.part?`<span class="small sev2">Partial session: ${fmtMins(x.mins)} of about ${fmtMins(x.full)} today. Continue tomorrow.</span>`:""}
       <span class="small"><span class="muted">Why:</span> ${esc(x.why)}</span>
       <span class="small"><span class="muted">Benefit:</span> ${esc(x.gain)}</span>
       <div class="row">${has(x)?'<span class="chip A">In today\'s tasks</span>':`<button data-act="priadd" data-i="${i}">Add to today's tasks</button>`}${x.go?`<a class="small" style="color:var(--accent)" href="#${x.go}">Open ${x.go==="journal"?"Tough topics":x.go==="evaluate"?"Evaluate":"Mocks"}</a>`:""}</div>
     </div>`).join(""):`<p class="small muted" style="margin:0">Nothing to suggest yet. Tick chapters in Syllabus and log your study, and priorities will appear here.</p>`}
     ${P.list.length>1&&P.list.some(x=>!has(x))?`<div class="row"><button class="primary" data-act="priall">Add all to today's tasks</button></div>`:""}
-    <p class="small muted" style="margin:0">Picked from your revision dates, confidence ratings, unread chapters in your focus block, question practice, mocks, evaluations and tough topics, sized to today's hours.</p>
+    <p class="small muted" style="margin:0">Picked from your revision dates, confidence ratings, unread chapters in your focus block, question practice, mocks, evaluations and tough topics, and planned to fill today's target (weekday ${S.settings.tWd} h, weekend ${S.settings.tWe} h). Durations are estimates: reading a chapter about 1–2 h, revising 30–60 min, question practice 1 h, a mock 3 h.</p>
   </div>`}
 function warningsCard(W){const sevL={3:"Urgent",2:"Important",1:"Heads-up"},shown=warnAll?W:W.slice(0,6);
   return `<div class="card"><div class="row between"><div class="label">Warnings</div><span class="small muted">${W.length?W.length+" active":"all clear"}</span></div>
@@ -1214,7 +1231,7 @@ V.today=()=>{
       <div class="bar"><i style="width:${Math.min(100,hrs/tgt*100)}%"></i></div>
       <div class="quick">${activePapers().map(p=>`<div class="q"><span class="row" style="gap:6px"><span class="swatch" style="background:${col(p.id)}"></span>${p.short}</span><span class="row" style="gap:2px"><button class="ghost" data-act="hr" data-p="${p.id}" data-d="-0.5" aria-label="Remove half hour ${p.short}">−</button><b>${((S.log[t]||{})[p.id]||0).toFixed(1)}</b><button class="ghost" data-act="hr" data-p="${p.id}" data-d="0.5" aria-label="Add half hour ${p.short}">+</button></span></div>`).join("")}</div>
       <div class="row" style="border-top:1px solid var(--line);padding-top:10px">${timerHTML()}</div>
-      <p class="small muted" style="margin:0">Tap + for every 30 minutes, or run the focus timer and it logs the time when you stop.</p>
+      <p class="small muted" style="margin:0">Tap + for every 30 minutes, or run the focus timer: anything from 1 minute is logged when you stop.</p>
     </div>
   </div>
   ${journeyCard()}
@@ -1673,9 +1690,9 @@ document.addEventListener("click",e=>{
     if(a==="tstart"){timer={p:document.getElementById("tPaper").value,start:Date.now()};store.set(TK,timer);render();return}
     if(a==="tcancel"){timer=null;store.del(TK);render();toast("Timer discarded");return}
     if(a==="tstop"){if(!timer)return;const now=Date.now(),cap=12*36e5,capped=now-timer.start>cap,end=capped?timer.start+cap:now,parts=splitSession(timer.start,end),tot=Object.values(parts).reduce((x,y)=>x+y,0),p=paperOf(timer.p).short;
-      if(tot>=0.02)for(const d in parts)addHours(d,timer.p,Math.round(parts[d]*100)/100);
+      const minsT=Math.floor(tot*60+1e-9);if(minsT>=1)for(const d in parts)addHours(d,timer.p,parts[d]);
       timer=null;store.del(TK);save();render();
-      toast(capped?`Logged the 12-hour maximum to ${p}. If the timer was left running, correct it in Hours.`:tot>=0.02?`Logged ${Math.round(tot*60)} min to ${p}${Object.keys(parts).length>1?", split across midnight":""}`:"Too short to log");return}
+      toast(capped?`Logged the 12-hour maximum to ${p}. If the timer was left running, correct it in Hours.`:minsT>=1?`Logged ${fmtMins(minsT)} to ${p}${Object.keys(parts).length>1?", split across midnight":""}`:"Under 1 minute, so nothing was logged");return}
     if(a==="delmock"){S.mocks=S.mocks.filter(m=>m.id!==b.dataset.id);if(mockEdit===b.dataset.id)mockEdit=null;save();render();return}
     if(a==="editmock"){mockEdit=b.dataset.id;render();const f=document.getElementById("mockForm");if(f)f.scrollIntoView({block:"center"});return}
     if(a==="mockcancel"){mockEdit=null;render();return}

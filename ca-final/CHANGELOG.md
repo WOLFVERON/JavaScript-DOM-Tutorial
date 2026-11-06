@@ -1,5 +1,15 @@
 # CA Final Rank Desk: changelog
 
+## Phase 2.1: priorities fill the day; 1-minute focus timer
+
+- Today's priorities now add up to today's study target (weekday / weekend hours). Highest-value tasks go
+  first; due tough-topic reviews and, in first reading, the next chapter always get a slot. A task that
+  doesn't fit becomes a partial session ("45 min of about 2 h today, continue tomorrow"). 8-hour days allow
+  up to 7 tasks and 3 per paper. Leftover time goes to question practice on the weakest started paper, or
+  to the next unread chapter. A 0-hour day only suggests due reviews.
+- Focus timer logs any session of 1 minute or more (whole minutes counted); hours are stored to the
+  nearest few seconds so short sessions aren't rounded up.
+
 ## Phase 2: AIR Command Centre (no data format change)
 
 Restore point: `archive/app-v2-pre-phase2.html`.
