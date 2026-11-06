@@ -1,5 +1,29 @@
 # CA Final Rank Desk: changelog
 
+## Phase 5: Adaptive revision and tough topics engine (data version 5)
+
+Restore point: `archive/app-v5-pre-phase5.html`. Data upgrades v4 → v5 automatically; tough topics convert to
+the adaptive schedule (interval, ease, repetitions, lapses, question-solving attempts, source).
+
+- **Adaptive spacing** per topic: Forgot / Hard / Good / Easy, each button showing the next gap. Good and Easy
+  stretch the gap by the topic's ease; Hard and Forgot shrink it and lower the ease. Priority-A chapters and
+  topics forgotten twice come back sooner; gaps are capped at half the days left to the paper so everything is
+  reviewed before the exam. Overdue reviews get credit for the time actually elapsed.
+- **Mastery score 0–100**: recall consistency 30, stability 15, solving questions unaided 20, unfamiliar
+  questions 20, conceptual understanding 15 (own explanation written and no recent conceptual mock mistakes in
+  the chapter). Mastered only with 80+, at least one question solved unaided, 4+ reviews and a 3-week gap.
+  Old "mastered" topics without a recorded solved question return to active. After a Good/Easy review, the app
+  asks whether you've solved a question on it; you can also record attempts on the topic.
+- **Suggested tough topics** from mistakes repeated across mocks, mock mistakes of 4+ marks, weak evaluation
+  answers and chapters rated 1–2 for confidence; add, add all or dismiss. New type "Practice question I got wrong".
+- **Recall tests**: 62 built-in cards (Ind AS, Standards on Auditing, AFM formulas, Direct Tax, GST & Customs,
+  definitions), filtered to your papers, due and weak cards first; 5 or 10 per test. Cards follow their own
+  spacing. Missed cards become tough topics due today (switchable). Claude can write 5 questions on any chapter.
+- **Revision analytics**: due and overdue, mastered, forgotten 2+ times, reviews this week, recall accuracy by
+  week (reviews + recall tests), and "Review next" ordered by overdue days, priority, lapses and mastery gap.
+- Mastered status is recalculated whenever topics load. Reset of tough topics also clears recall data.
+- `tests/phase5.test.js`: 41 checks.
+
 ## Phase 4: Advanced mock performance analytics (data version 4)
 
 Restore point: `archive/app-v4-pre-phase4.html`. Data upgrades v3 → v4 automatically (mocks gain a mistake log).

@@ -30,7 +30,7 @@ const MOCKS = [
     const v3 = {v: 3, updatedAt: 5, settings: {startDate: ymd(-5)}, ch: {}, log: {}, mocks: [{id: 'm', paper: 'fr', date: ymd(-1), score: 50, max: 100}], checks: {}, todos: {}, plan: {}, sessions: []};
     const p = await open(b, v3);
     const r = await p.evaluate(() => ({v: S.v, mist: Array.isArray(S.mocks[0].mistakes), score: S.mocks[0].score}));
-    ok('migration v4: mocks gain a mistake log, scores kept', r.v === 4 && r.mist && r.score === 50, r);
+    ok('migration v4: mocks gain a mistake log, scores kept', r.v >= 4 && r.mist && r.score === 50, r);
     ok('migration v4: no errors', !p.errs.length, p.errs); await p.close();
   }
 

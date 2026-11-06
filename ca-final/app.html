@@ -345,11 +345,11 @@ const GAP={fr:0,afm:2,audit:4,dt:6,idt:8,ibs:10};
 function defaultDates(first){const o={};for(const k in GAP)o[k]=iso(addDays(parse(first),GAP[k]));return o}
 function freshState(){
   return {v:DATA_VERSION, updatedAt:0,
-    settings:{examDates:defaultDates("2028-11-02"), startDate:todayISO(), groups:"both", tWd:2.5, tWe:8, revDays:21, targetPct:75, frDone:false, onBoard:false, share:{hours:true,streak:true,syllabus:true,mocks:true,courses:true,total:true,level:true}, cols:{today:true,week:true,target:true,streak:true,syllabus:true,mocks:true,courses:true,total:true,level:true}, rankBy:"week"},
-    ch:{}, log:{}, mocks:[], checks:{}, todos:{}, plan:{}, sessions:[]};
+    settings:{examDates:defaultDates("2028-11-02"), startDate:todayISO(), groups:"both", tWd:2.5, tWe:8, revDays:21, targetPct:75, frDone:false, autoRecall:true, onBoard:false, share:{hours:true,streak:true,syllabus:true,mocks:true,courses:true,total:true,level:true}, cols:{today:true,week:true,target:true,streak:true,syllabus:true,mocks:true,courses:true,total:true,level:true}, rankBy:"week"},
+    ch:{}, log:{}, mocks:[], checks:{}, todos:{}, plan:{}, sessions:[], recall:{}, recallLog:[], tsDismiss:{}};
 }
 /* ---- data versions: each step upgrades saved data by one version ---- */
-const DATA_VERSION=4;
+const DATA_VERSION=5;
 const MIGRATIONS={
   2:o=>{ // v1 -> v2: revision history on chapters, drop malformed records
     o.ch=isObj(o.ch)?o.ch:{};for(const k in o.ch){const c=o.ch[k];if(!isObj(c)){delete o.ch[k];continue}if(!Array.isArray(c.hist))c.hist=c.last?[{d:c.last,s:"legacy"}]:[]}
@@ -362,6 +362,9 @@ const MIGRATIONS={
     return o},
   4:o=>{ // v3 -> v4: mock details and a mistake log on each mock
     (o.mocks||[]).forEach(m=>{m.mistakes=Array.isArray(m.mistakes)?m.mistakes.filter(x=>x&&x.id&&+x.lost>0):[]});
+    return o},
+  5:o=>{ // v4 -> v5: recall-test results and history, dismissed tough-topic suggestions
+    o.recall=isObj(o.recall)?o.recall:{};o.recallLog=Array.isArray(o.recallLog)?o.recallLog.filter(x=>x&&x.id):[];o.tsDismiss=isObj(o.tsDismiss)?o.tsDismiss:{};
     return o}
 };
 function migrate(o){let v=+o.v||1;while(v<DATA_VERSION){v++;o=MIGRATIONS[v](o);o.v=v}return o}
@@ -394,7 +397,7 @@ let boardCol=null, myId=null, userNs=null, board=[], boardReady=false, lastBoard
 function setBase(o){base=o;store.set(LS+".base",o)}
 function pruneTodos(){const cut=iso(addDays(new Date(),-90));for(const k in S.todos)if(k<cut)delete S.todos[k];
   const pc=iso(addDays(new Date(),-30));for(const k in S.plan||{})if(k<pc)delete S.plan[k];
-  if(Array.isArray(S.sessions)&&S.sessions.length>400)S.sessions=S.sessions.slice(-400)}
+  if(Array.isArray(S.sessions)&&S.sessions.length>400)S.sessions=S.sessions.slice(-400);if(Array.isArray(S.recallLog)&&S.recallLog.length>300)S.recallLog=S.recallLog.slice(-300)}
 function persistLocal(){store.set(LS,S)}
 function save(){
   S.updatedAt=Date.now();pruneTodos();persistLocal();
@@ -406,9 +409,10 @@ function merge3(b,l,r,pl){if(same(l,r))return l;if(same(l,b))return r;if(same(r,
   if(isObj(l)&&isObj(r)){const o={},bb=isObj(b)?b:{};new Set([...Object.keys(l),...Object.keys(r)]).forEach(k=>{const m=merge3(bb[k],l[k],r[k],pl);if(m!==undefined)o[k]=m});return o}
   return pl?l:r}
 function toMap(a){const o={};(a||[]).forEach(m=>{if(m&&m.id)o[m.id]=m});return o}
-function mergeState(b,l,r){const pl=(l.updatedAt||0)>=(r.updatedAt||0),prep=x=>x?Object.assign({},x,{mocks:toMap(x.mocks),sessions:toMap(x.sessions)}):{};
+function mergeState(b,l,r){const pl=(l.updatedAt||0)>=(r.updatedAt||0),prep=x=>x?Object.assign({},x,{mocks:toMap(x.mocks),sessions:toMap(x.sessions),recallLog:toMap(x.recallLog)}):{};
   const m=merge3(prep(b),prep(l),prep(r),pl);m.mocks=Object.values(isObj(m.mocks)?m.mocks:{}).sort((a,c)=>a.date<c.date?-1:1);
-  m.sessions=Object.values(isObj(m.sessions)?m.sessions:{}).sort((a,c)=>a.start-c.start);m.updatedAt=Math.max(l.updatedAt||0,r.updatedAt||0);return load(m)}
+  m.sessions=Object.values(isObj(m.sessions)?m.sessions:{}).sort((a,c)=>a.start-c.start);
+  m.recallLog=Object.values(isObj(m.recallLog)?m.recallLog:{}).sort((a,c)=>a.at-c.at);m.updatedAt=Math.max(l.updatedAt||0,r.updatedAt||0);return load(m)}
 /* stop cloud saving for this visit; data stays on the device */
 function noWrite(msg){canWrite=false;dirty=false;clearTimeout(retryT);retryT=null;clearTimeout(saveTimer);dbRef=null;JR.col=null;ER.col=null;
   setSync(false,"Saved on this device only");notice(msg||NO_ACCESS_MSG,"warn");if(view==="squad"||view==="today")render()}
@@ -530,7 +534,7 @@ function badges(){const bs=bestStreak(),th=totalHours(),ov=overall()*100,out=[];
   const mk=S.mocks.length;out.push({g:"Mocks",t:"First mock written",got:mk>=1,left:"write 1 mock",prog:Math.min(1,mk)});
   out.push({g:"Mocks",t:"5 mocks written",got:mk>=5,left:`${5-mk} more mocks`,prog:Math.min(1,mk/5)});
   const best=S.mocks.reduce((a,m)=>Math.max(a,m.score/m.max*100),0);out.push({g:"Mocks",t:"60%+ in a mock",got:best>=60,left:`${Math.ceil(60-best)} more marks on your best mock`,prog:Math.min(1,best/60)});
-  const ms=J.filter(e=>e.mastered).length;out.push({g:"Tough topics",t:"First tough topic mastered",got:ms>=1,left:"master 1 tough topic",prog:ms?1:Math.min(.9,J.reduce((a,e)=>Math.max(a,(e.box||0)/5),0))});
+  const ms=J.filter(e=>e.mastered).length;out.push({g:"Tough topics",t:"First tough topic mastered",got:ms>=1,left:"master 1 tough topic",prog:ms?1:Math.min(.9,J.reduce((a,e)=>Math.max(a,mastery(e).score/100),0))});
   return out}
 function journeyCard(){
   const plan=buildPlan(),st=parse(S.settings.startDate),ex=parse(examStart()),total=Math.max(1,diffDays(st,ex)),dn=Math.min(total,Math.max(0,diffDays(st,new Date())+1));
@@ -670,7 +674,13 @@ function makeRecords(o){
     if(first){first=false;const remote=new Set(qs.docs.map(d=>d.id));o.list().filter(x=>!remote.has(x.id)&&!TOMB[x.id]).forEach(x=>write(x.id,()=>o.write?o.write(col,x):col.doc(x.id).set(o.toDoc(x))))}
     R.saveLocal();o.onChange();},()=>{})};
   return R}
-function migJ(e){if(e&&e.cid===undefined){e.cid=(typeof e.ch==="number"&&e.ch>=0&&CH[e.p]&&CH[e.p][e.ch])?CH[e.p][e.ch][3]:null;delete e.ch}return e}
+function migJ(e){if(!e)return e;if(e.cid===undefined){e.cid=(typeof e.ch==="number"&&e.ch>=0&&CH[e.p]&&CH[e.p][e.ch])?CH[e.p][e.ch][3]:null;delete e.ch}
+  if(e.v!==2){const rv=Array.isArray(e.reviews)?e.reviews:[];e.reviews=rv;e.ease=e.ease||2.3;e.reps=e.reps!=null?e.reps:(e.box||0);
+    e.ivl=e.ivl!=null?e.ivl:(e.box!=null?[1,3,7,14,30,60][Math.min(e.box,5)]:0);e.lapses=e.lapses!=null?e.lapses:rv.filter(r=>r.r==="forgot").length;
+    e.apps=Array.isArray(e.apps)?e.apps:[];e.src=e.src||(e.kind==="Mock mistake"?"mock":"manual");e.lastRev=e.lastRev||(rv.length?rv[rv.length-1].d:null);
+    if(!e.due)e.due=todayISO();delete e.box;e.v=2}
+  e.mastered=mastery(e).mastered;
+  return e}
 function validJ(e){return e&&typeof e.id==="string"&&typeof e.topic==="string"&&!!CH[e.p]}
 /* ============ TOUGH TOPICS JOURNAL ============ */
 /* Quick bank: short revision cards on stable, frequently examined concepts. Verify against ICAI study material. */
@@ -708,13 +718,158 @@ const BANK=[
 ];
 const INTERVALS=[1,3,7,14,30,60];
 const JK=LS+".journal";
+/* ============ RECALL BANK ============
+   Short active-recall cards on stable, frequently examined points. DT and IDT figures depend on the Act and
+   Finance Act applicable to your attempt, so check them against ICAI material. */
+const RC_AREAS=["Ind AS","Standards on Auditing","AFM formulas","Direct Tax","GST & Customs","Definitions"];
+const RECALL=[
+ ["fr-0","Ind AS","Name the five steps of revenue recognition in Ind AS 115.","Identify the contract; identify performance obligations; determine the transaction price; allocate it to the obligations; recognise revenue when or as each obligation is satisfied."],
+ ["fr-0","Ind AS","When is revenue recognised over time under Ind AS 115?","When any one applies: the customer simultaneously receives and consumes the benefits; the work creates or enhances an asset the customer controls; or the asset has no alternative use and there's an enforceable right to payment for work done."],
+ ["fr-0","Ind AS","How is variable consideration estimated, and what limits it?","Expected value or most likely amount, included only to the extent it's highly probable that a significant reversal won't occur (the constraint)."],
+ ["fr-0","Ind AS","What decides principal vs agent under Ind AS 115?","Whether the entity controls the good or service before it transfers to the customer. Principal records gross revenue; agent records only its fee or commission."],
+ ["fr-4","Ind AS","How is a lessee's lease liability measured at commencement?","Present value of lease payments not yet paid, discounted at the rate implicit in the lease, or the incremental borrowing rate if that rate can't be readily determined."],
+ ["fr-4","Ind AS","Which two recognition exemptions can a lessee use?","Short-term leases (12 months or less) and leases of low-value assets."],
+ ["fr-4","Ind AS","In a sale and leaseback that is a sale, how much gain does the seller-lessee recognise?","Only the gain or loss relating to the rights transferred to the buyer-lessor; the ROU asset is measured at the proportion of the previous carrying amount retained."],
+ ["fr-1","Ind AS","Which two tests classify a financial asset under Ind AS 109?","The business model test and the contractual cash flow (SPPI) test."],
+ ["fr-1","Ind AS","How is expected credit loss measured in Stage 1, 2 and 3?","Stage 1: 12-month ECL. Stages 2 and 3: lifetime ECL (Stage 3 interest on the net carrying amount)."],
+ ["fr-1","Ind AS","What is the rebuttable presumption for a significant increase in credit risk?","Contractual payments more than 30 days past due."],
+ ["fr-1","Ind AS","How is a compound instrument split under Ind AS 32?","Liability = PV of contractual cash flows at the market rate for similar debt without conversion; equity = proceeds minus the liability component."],
+ ["fr-2","Ind AS","Give the goodwill formula under Ind AS 103.","Consideration transferred + NCI + fair value of any previously held interest − net identifiable assets at fair value."],
+ ["fr-2","Ind AS","How is a bargain purchase gain treated under Ind AS 103 in India?","After reassessment, recognised in OCI and accumulated in capital reserve where there's clear evidence of the reason; otherwise directly in capital reserve."],
+ ["fr-2","Ind AS","Which method applies to common control combinations (Appendix C)?","Pooling of interests: carrying amounts, no new goodwill, difference to capital reserve, comparatives restated as if combined from the start of the earliest period presented."],
+ ["fr-3","Ind AS","What three elements establish control under Ind AS 110?","Power over the investee, exposure or rights to variable returns, and the ability to use power to affect those returns."],
+ ["fr-6","Ind AS","What is recoverable amount under Ind AS 36?","The higher of fair value less costs of disposal and value in use."],
+ ["fr-6","Ind AS","Can an impairment loss on goodwill be reversed?","No. Goodwill impairment is never reversed."],
+ ["fr-5","Ind AS","How is an equity-settled share-based payment measured?","At grant-date fair value, not remeasured; expensed over the vesting period based on the number expected to vest."],
+ ["fr-15","Ind AS","How are options treated in diluted EPS?","Treasury stock method: dilutive shares = shares under option − shares the exercise proceeds would buy at the average market price."],
+ ["fr-14","Ind AS","Define functional currency.","The currency of the primary economic environment in which the entity operates."],
+ ["audit-4","Standards on Auditing","What period must management's going-concern assessment cover under SA 570?","At least twelve months from the date of the financial statements."],
+ ["audit-4","Standards on Auditing","Material uncertainty on going concern is adequately disclosed. What report?","Unmodified opinion with a separate 'Material Uncertainty Related to Going Concern' section."],
+ ["audit-5","Standards on Auditing","Misstatements are material and pervasive. Which opinion under SA 705?","Adverse opinion."],
+ ["audit-5","Standards on Auditing","Sufficient appropriate evidence can't be obtained and possible effects are material and pervasive. Which opinion?","Disclaimer of opinion."],
+ ["audit-5","Standards on Auditing","Material but not pervasive misstatement. Which opinion?","Qualified opinion."],
+ ["audit-5","Standards on Auditing","From which matters are Key Audit Matters selected under SA 701?","From matters communicated with those charged with governance, choosing those of most significance in the audit."],
+ ["audit-5","Standards on Auditing","Difference between an Emphasis of Matter and an Other Matter paragraph (SA 706)?","EOM refers to a matter properly presented or disclosed that's fundamental to users' understanding; OM refers to a matter not presented or disclosed that's relevant to understanding the audit, the auditor's responsibilities or the report."],
+ ["audit-2","Standards on Auditing","What is performance materiality?","Amount(s) set below materiality for the financial statements as a whole, to reduce to an appropriately low level the probability that uncorrected and undetected misstatements together exceed materiality."],
+ ["audit-1","Standards on Auditing","Which fraud risks does SA 240 presume?","Revenue recognition (rebuttable) and management override of controls (not rebuttable)."],
+ ["audit-1","Standards on Auditing","What are the preconditions for an audit under SA 210?","An acceptable financial reporting framework, and management's agreement that it acknowledges and understands its responsibilities."],
+ ["audit-1","Standards on Auditing","Within what time should the final audit file be assembled (SA 230)?","Ordinarily not more than 60 days after the date of the auditor's report."],
+ ["audit-3","Standards on Auditing","In tests of controls, what is the sample deviation rate compared with (SA 530)?","The tolerable rate of deviation."],
+ ["afm-2","AFM formulas","State the CAPM equation.","E(R) = Rf + β × (Rm − Rf)."],
+ ["afm-2","AFM formulas","Sharpe ratio formula?","(Rp − Rf) / σp."],
+ ["afm-2","AFM formulas","Treynor ratio formula?","(Rp − Rf) / βp."],
+ ["afm-2","AFM formulas","Jensen's alpha formula?","Rp − [Rf + βp × (Rm − Rf)]."],
+ ["afm-0","AFM formulas","State put-call parity.","C + PV(X) = P + S."],
+ ["afm-0","AFM formulas","In Black-Scholes, how is d2 derived from d1?","d2 = d1 − σ√t."],
+ ["afm-0","AFM formulas","Binomial model: risk-neutral probability of an up move?","p = (e^(rt) − d) / (u − d)."],
+ ["afm-0","AFM formulas","Fair futures price under the cost of carry model with dividends?","(S − PV of dividends) × e^(rt)."],
+ ["afm-1","AFM formulas","Forward rate under interest rate parity (direct quote)?","Forward = Spot × (1 + home interest rate) / (1 + foreign interest rate), for the period."],
+ ["afm-3","AFM formulas","Modified duration from Macaulay duration?","Modified duration = Macaulay duration / (1 + yield)."],
+ ["afm-3","AFM formulas","Approximate % bond price change for a yield change?","≈ −Modified duration × change in yield."],
+ ["afm-5","AFM formulas","How is synergy measured in a merger?","V(AB) − [V(A) + V(B)]."],
+ ["afm-7","AFM formulas","Convert 1-day VaR to 10-day VaR.","1-day VaR × √10."],
+ ["dt-18","Direct Tax","List the transfer pricing methods.","CUP, Resale Price, Cost Plus, Profit Split, TNMM, and any other method prescribed; use the most appropriate method."],
+ ["dt-18","Direct Tax","Arm's length range when there are enough comparables?","35th to 65th percentile of the data set (where there are six or more comparables). Check the rules applicable to your attempt."],
+ ["dt-0","Direct Tax","Basic conditions for an individual to be resident?","In India for 182 days or more in the year, or 60 days or more in the year plus 365 days or more in the four preceding years (with stated exceptions). Check the Act applicable to your attempt."],
+ ["dt-21","Direct Tax","How many action points does the OECD/G20 BEPS project have?","Fifteen."],
+ ["dt-20","Direct Tax","Name the two main model tax conventions.","The OECD Model and the UN Model."],
+ ["dt-11","Direct Tax","How many Income Computation and Disclosure Standards are notified?","Ten (ICDS I to X). Check for changes applicable to your attempt."],
+ ["idt-6","GST & Customs","Conditions for claiming ITC under section 16(2) of the CGST Act?","Tax invoice or debit note; details in GSTR-2B; goods or services received; tax actually paid by the supplier; return filed. Pay the supplier within 180 days."],
+ ["idt-6","GST & Customs","Time limit to claim ITC for a financial year?","30 November after the end of the financial year, or the date of filing the annual return, whichever is earlier."],
+ ["idt-3","GST & Customs","General place of supply rule for B2B services (supplier and recipient in India)?","Location of the registered recipient."],
+ ["idt-0","GST & Customs","Composite supply vs mixed supply: how is each taxed?","Composite: naturally bundled with a principal supply, taxed at the principal supply's rate. Mixed: not naturally bundled but sold for one price, taxed at the highest rate among the items."],
+ ["idt-1","GST & Customs","What is reverse charge?","The recipient, not the supplier, is liable to pay the GST."],
+ ["idt-17","GST & Customs","Customs valuation: cost of transport if not ascertainable?","20% of the FOB value."],
+ ["idt-17","GST & Customs","Customs valuation: insurance cost if not ascertainable?","1.125% of the FOB value."],
+ ["idt-18","GST & Customs","Which date's rate of duty applies to imported goods (section 15)?","The date of presenting the bill of entry, or the date of entry inwards of the vessel if that is later."],
+ ["fr-7","Definitions","When is information material under Ind AS 1?","If omitting, misstating or obscuring it could reasonably be expected to influence decisions primary users make based on the financial statements."],
+ ["fr-8","Definitions","What is an adjusting event after the reporting period (Ind AS 10)?","An event that provides evidence of conditions that existed at the end of the reporting period."],
+ ["fr-8","Definitions","Define fair value under Ind AS 113.","The price that would be received to sell an asset or paid to transfer a liability in an orderly transaction between market participants at the measurement date."],
+].map(r=>({id:"rc"+hashStr(r[2]),cid:r[0],p:r[0].split("-")[0],area:r[1],q:r[2],a:r[3]}));
+function hashStr(s){let h=5381;for(let i=0;i<s.length;i++)h=((h<<5)+h+s.charCodeAt(i))|0;return (h>>>0).toString(36)}
+
+/* ============ ADAPTIVE REVISION ============
+   Each topic has its own interval. Good/Easy stretch it by the topic's ease; Hard and Forgot shrink it and
+   lower the ease. Important (priority A) and often-forgotten topics come back sooner, and intervals are
+   squeezed so every topic gets reviewed before its paper. */
+const RATE_VAL={forgot:0,hard:.5,good:1,easy:1};
+function schedule(e,r){const t=parse(todayISO());let ease=e.ease||2.3,ivl=e.ivl||0,reps=e.reps||0,lapses=e.lapses||0;
+  const elapsed=e.lastRev?Math.max(0,diffDays(parse(e.lastRev),t)):ivl;
+  if(r==="forgot"){lapses++;reps=0;ivl=1;ease=Math.max(1.3,ease-.2)}
+  else if(r==="hard"){ease=Math.max(1.3,ease-.15);ivl=Math.max(1,Math.round(Math.max(ivl,1)*1.2));reps++}
+  else if(r==="good"){ivl=reps===0?1:reps===1?3:Math.round(Math.max(ivl,elapsed)*ease);reps++}
+  else{ease=Math.min(2.8,ease+.15);ivl=reps===0?3:Math.round(Math.max(ivl,elapsed,1)*ease*1.3);reps++}
+  const row=chRow(e.cid),pri=row?row[1]:"B";ivl=Math.max(1,Math.round(ivl*(pri==="A"?.85:pri==="C"?1.15:1)*(lapses>=2?.8:1)));
+  const ex=examDates()[e.p];if(ex){const left=diffDays(t,parse(ex));if(left>2)ivl=Math.min(ivl,Math.max(1,Math.floor(left/2)))}
+  ivl=Math.min(ivl,120);
+  Object.assign(e,{ease:Math.round(ease*100)/100,ivl,reps,lapses,lastRev:todayISO(),due:iso(addDays(t,ivl))});
+  e.reviews=(e.reviews||[]).concat([{d:todayISO(),r}]).slice(-60);e.mastered=mastery(e).mastered;return ivl}
+function previewIvl(e,r){return schedule(JSON.parse(JSON.stringify(e)),r)}
+/* mastery 0–100: needs proof of solving questions, not just repeated reading */
+const MASTERY_PARTS=[["recall","Recall consistency",30],["stability","Stability over attempts",15],["solve","Solving questions unaided",20],["unfamiliar","Applying it to unfamiliar questions",20],["concept","Conceptual understanding",15]];
+function mastery(e){const rv=(e.reviews||[]).slice(-6),W=[1,1,1.5,1.5,2,2].slice(-rv.length||6);
+  const recall=rv.length?rv.reduce((a,r,i)=>a+(RATE_VAL[r.r]||0)*W[i],0)/W.slice(0,rv.length).reduce((a,b)=>a+b,0):0;
+  const stability=Math.min(1,(e.ivl||0)/21)*((e.lapses||0)?Math.max(.3,1-(e.lapses||0)*.15):1);
+  const apps=(e.apps||[]).slice(-6),okN=apps.filter(a=>a.ok).length,solve=apps.length?okN/apps.length:0;
+  const nw=apps.filter(a=>a.type==="new"),unfamiliar=nw.length?nw.filter(a=>a.ok).length/nw.length:0;
+  const since=iso(addDays(new Date(),-60)),conceptMist=!!e.cid&&S.mocks.some(m=>m.date>=since&&(m.mistakes||[]).some(x=>x.cid===e.cid&&x.cat==="concept"));
+  const concept=((e.clicked||"").trim().length>=20?.6:0)+(conceptMist?0:.4);
+  const parts={recall,stability,solve,unfamiliar,concept};const score=Math.round(MASTERY_PARTS.reduce((a,[k,,w])=>a+parts[k]*w,0));
+  const last=rv[rv.length-1];
+  const mastered=score>=80&&okN>=1&&(e.reviews||[]).length>=4&&(e.ivl||0)>=21&&!(last&&last.r==="forgot");
+  return {score,parts,mastered,conceptMist,need:[score<80?"score of 80+":"",okN<1?"one question solved unaided":"",(e.reviews||[]).length<4?`${4-(e.reviews||[]).length} more review${(e.reviews||[]).length===3?"":"s"}`:"",(e.ivl||0)<21?"an interval of 3+ weeks":""].filter(Boolean)}}
+function recordApp(e,type,ok){e.apps=(e.apps||[]).concat([{d:todayISO(),type,ok}]).slice(-20);e.mastered=mastery(e).mastered;jPut(e)}
+function topicPriority(e){const t=todayISO(),over=e.due<t?Math.min(30,diffDays(parse(e.due),parse(t))):0,row=chRow(e.cid);return over+({A:6,B:3,C:1}[row?row[1]:"B"])+(e.lapses||0)*3+(100-mastery(e).score)/10}
+/* weak-topic suggestions from mocks, evaluations and confidence ratings */
+function tsSuggestions(){const D=S.tsDismiss||{},out=[],activeC=new Set(J.filter(e=>!e.mastered&&e.cid).map(e=>e.cid)),pair=new Set(J.filter(e=>!e.mastered).map(e=>e.cid+"|"+(e.cat||"")));
+  repeatedMistakes(mocksIn("all")).forEach(r=>{const k="rep|"+r.cid+"|"+r.cat;if(D[k]||pair.has(r.cid+"|"+r.cat))return;const ch=chRow(r.cid);
+    out.push({key:k,src:"repeated",p:r.paper,cid:r.cid,cat:r.cat,kind:"Repeated mistake",topic:`${CAT[r.cat].label}: ${ch?ch[0]:"chapter"}`,why:`Same mistake in ${r.n} mocks, ${r.lost} marks lost.`,score:90+r.n})});
+  const repK=new Set(repeatedMistakes(mocksIn("all")).map(o=>o.cid+"|"+o.cat));
+  mocksIn("all").slice(-6).forEach(m=>(m.mistakes||[]).forEach(x=>{if(x.tough||x.cat==="unclassified"||(+x.lost||0)<4)return;const k="mx|"+x.id;if(D[k]||pair.has(x.cid+"|"+x.cat)||repK.has(x.cid+"|"+x.cat))return;
+    out.push({key:k,src:"mock",p:m.paper,cid:x.cid,cat:x.cat,mock:m.id,mx:x.id,kind:"Mock mistake",topic:`${m.num||"Mock"} Q${x.q||"?"}: ${CAT[x.cat].label}${x.note?" · "+x.note:""}`.slice(0,140),why:`${x.lost} marks lost on ${fmtShort(parse(m.date))}.`,score:70+(+x.lost||0)})}));
+  EV.filter(ev=>!ev.addedTough).slice(-3).forEach(ev=>{const n=ev.result.questions.filter(q=>q.status==="weak"||q.status==="partial").length,k="ev|"+ev.id;if(n&&!D[k])out.push({key:k,src:"eval",p:ev.paper,ev:ev.id,kind:"Mock mistake",topic:`Weak answers in ${ev.name}`,why:`${n} answer${n>1?"s":""} lost marks in the evaluation. Adds one topic per answer.`,score:75})});
+  activePapers().forEach(p=>CH[p.id].forEach(r=>{const c=S.ch[r[3]]||{};if(c.r&&c.conf&&c.conf<=2&&!activeC.has(r[3])){const k="conf|"+r[3];if(!D[k])out.push({key:k,src:"weak",p:p.id,cid:r[3],kind:"Low confidence",topic:r[0],why:`You rated your confidence ${c.conf}/5.`,score:60+(PRI_W[r[1]]||1)})}}));
+  return out.sort((a,b)=>b.score-a.score)}
+function newTopic(o){return Object.assign({id:"j"+Date.now().toString(36)+Math.random().toString(36).slice(2,5),cid:null,kind:"Concept",why:"",created:todayISO(),due:iso(addDays(new Date(),1)),reviews:[],mastered:false,clicked:"",card:null,ease:2.3,ivl:0,reps:0,lapses:0,apps:[],src:"manual",lastRev:null,v:2},o)}
+function acceptSuggestion(sg){
+  if(sg.src==="eval"){const ev=EV.find(e=>e.id===sg.ev);if(!ev)return 0;let n=0;ev.result.questions.filter(q=>q.status==="partial"||q.status==="weak").forEach(q=>{const miss=(q.missed||[])[0]||q.feedback||"";jPut(newTopic({p:ev.paper,topic:`${ev.name} Q${q.q}: ${miss.length>90?miss.slice(0,88)+"…":miss}`,kind:"Mock mistake",why:(q.missed||[]).join("; ")+(q.icai_tip?" | ICAI: "+q.icai_tip:""),src:"eval"}));n++});ev.addedTough=true;evPut(ev);return n}
+  jPut(newTopic({p:sg.p,cid:sg.cid||null,cat:sg.cat||null,topic:sg.topic,kind:sg.kind,why:sg.why,src:sg.src}));
+  if(sg.src==="mock"){const m=S.mocks.find(z=>z.id===sg.mock),x=m&&(m.mistakes||[]).find(y=>y.id===sg.mx);if(x)x.tough=true}
+  return 1}
+/* recall tests: due and weak cards first; misses become tough topics */
+let rt=null;
+function recallPool(area){const ps=new Set(activePapers().map(p=>p.id));return RECALL.filter(x=>ps.has(x.p)&&(area==="all"||x.area===area))}
+function pickRecall(area,n){const t=todayISO();return recallPool(area).map(x=>{const r=S.recall[x.id];const sc=!r?2:r.due<=t?3+(r.n-r.right)/Math.max(1,r.n):0;return {x,sc:sc+Math.random()*.5}}).filter(o=>o.sc>0).sort((a,b)=>b.sc-a.sc).slice(0,n).map(o=>o.x)}
+function gradeRecall(x,g){const t=parse(todayISO());if(!x.ai){const r=S.recall[x.id]||{n:0,right:0,partial:0,box:0};r.n++;if(g==="right"){r.right++;r.box=Math.min(4,r.box+1)}else if(g==="partial"){r.partial++}else r.box=0;
+    r.last=todayISO();r.due=iso(addDays(t,g==="right"?[1,3,7,14,30][r.box]:1));S.recall[x.id]=r}
+  if(g==="missed"&&S.settings.autoRecall!==false){const ex=J.find(e=>e.rid===x.id&&!e.mastered);
+    if(ex){ex.due=todayISO();jPut(ex);return "again"}
+    jPut(newTopic({p:x.p,cid:x.cid,rid:x.id,topic:x.q,kind:"Recall failure",src:"recall",why:"Missed in a recall test.",due:todayISO(),card:{summary:x.a,points:[x.a],mnemonic:"",traps:[],questions:[{q:x.q,a:x.a}],refs:[],at:todayISO()}}));return "added"}
+  return ""}
+function finishRecall(){if(!rt)return;const res=rt.res;S.recallLog=(S.recallLog||[]).concat([{id:"rl"+Date.now().toString(36),at:Date.now(),d:todayISO(),area:rt.area,n:res.length,right:res.filter(r=>r.g==="right").length,partial:res.filter(r=>r.g==="partial").length}]);rt.done=true;save()}
+async function aiRecall(cid){const row=chRow(cid),pid=CHMAP[cid].p;
+  const prompt=`You are a CA Final (ICAI, new scheme) examiner. Write 5 short active-recall questions on "${row[0]}" (${paperOf(pid).name}).
+Mix definitions, conditions, provisions or formulas, and one quick numerical concept. Use ICAI terminology. Cite Ind AS, SA or section numbers only when you're confident.
+For DT/IDT, figures depend on the Act and Finance Act applicable to the attempt; keep to stable concepts.
+Return ONLY JSON: {"items":[{"q":"question","a":"concise model answer"}]}`;
+  const r=await sampleNs.json(prompt,{modelTier:"default"});const items=(r&&Array.isArray(r.items)?r.items:[]).filter(x=>x&&x.q&&x.a).slice(0,6);
+  if(!items.length)throw {code:"invalid_json"};return items.map((x,i)=>({id:"ai"+hashStr(cid+x.q),ai:true,cid,p:pid,area:"Claude",q:String(x.q),a:String(x.a)}))}
+/* revision analytics */
+function revisionStats(){const t=parse(todayISO()),wk0=iso(addDays(t,-6)),act=J.filter(e=>!e.mastered);
+  const weeks=[3,2,1,0].map(w=>{const a=iso(addDays(t,-7*w-6)),b=iso(addDays(t,-7*w));let s=0,n=0;
+    J.forEach(e=>(e.reviews||[]).forEach(r=>{if(r.d>=a&&r.d<=b){s+=RATE_VAL[r.r]||0;n++}}));
+    (S.recallLog||[]).forEach(l=>{if(l.d>=a&&l.d<=b){s+=l.right+.5*l.partial;n+=l.n}});return {a,b,n,pct:n?Math.round(s/n*100):null}});
+  const reviews7=J.reduce((a,e)=>a+(e.reviews||[]).filter(r=>r.d>=wk0).length,0)+(S.recallLog||[]).filter(l=>l.d>=wk0).reduce((a,l)=>a+l.n,0);
+  return {mastered:J.filter(e=>e.mastered).length,forgotten:act.filter(e=>(e.lapses||0)>=2).length,overdue:act.filter(e=>e.due<todayISO()).length,due:jDue().length,reviews7,weeks,
+    next:act.slice().sort((a,b)=>topicPriority(b)-topicPriority(a)).slice(0,5),avgMastery:act.length?Math.round(act.reduce((a,e)=>a+mastery(e).score,0)/act.length):null}}
+
 let J=(store.get(JK,[])||[]).filter(e=>validJ(e)&&!TOMB[e.id]).map(migJ);
 let jCol=null, jWrites={}, sampleNs=null, jGen={}, jFilter="due", jPaperF="all", jOpen=null, jDel=null, rv=null, jPrefill=null;
 const JR=makeRecords({key:JK,list:()=>J,setList:a=>{J=a},toLocal:e=>e,
   fromDoc:d=>{try{const r=migJ(JSON.parse(d.e));return validJ(r)?r:null}catch(e){return null}},toDoc:e=>({e:JSON.stringify(e),u:e.u}),
   onChange:()=>{if(view==="journal"||view==="today")render()}});
 function jSaveLocal(){JR.saveLocal()}
-function jPut(e){JR.put(e)}
+function jPut(e){JR.put(migJ(e))}
 function jRemove(id){JR.remove(id)}
 function initJournalSync(db,id,user,attach){
   if(attach)JR.attach(db.collection("data/users/"+id+"/state/journal"));
@@ -724,11 +879,7 @@ function jDue(){const t=todayISO();return J.filter(e=>!e.mastered&&e.due<=t)}
 function bankFor(e){const hay=(e.topic+" "+(chRow(e.cid)?chRow(e.cid)[0]:"")).toLowerCase();
   return BANK.map(b=>({b,s:b.p!==e.p?0:b.tags.reduce((a,t)=>a+(hay.includes(t)?t.length:0),0)})).filter(x=>x.s>0).sort((a,b)=>b.s-a.s).slice(0,2).map(x=>x.b)}
 function chName(e){return chRow(e.cid)?chRow(e.cid)[0]:"General"}
-function rate(e,r){const t=parse(todayISO());e.reviews=(e.reviews||[]).concat([{d:todayISO(),r}]);
-  if(r==="forgot"){e.box=0;e.due=iso(addDays(t,1))}
-  else if(r==="hard"){e.due=iso(addDays(t,Math.max(1,Math.round(INTERVALS[e.box||0]/2))))}
-  else{e.box=Math.min((e.box||0)+1,INTERVALS.length-1);e.due=iso(addDays(t,INTERVALS[e.box]));if(e.box>=INTERVALS.length-1&&r==="good"&&e.reviews.filter(x=>x.r==="good").length>=5)e.mastered=true}
-  jPut(e)}
+function rate(e,r){schedule(e,r);jPut(e)}
 function reviewPrompt(e){
   const qs=(e.card&&e.card.questions)||[];
   if(qs.length){const q=qs[(e.reviews||[]).length%qs.length];return {q:q.q,a:`<p style="margin:0">${esc(q.a)}</p>${e.card.points?`<ul>${e.card.points.slice(0,4).map(x=>`<li>${esc(x)}</li>`).join("")}</ul>`:""}`}}
@@ -762,85 +913,146 @@ Give 4 questions.`;
   jGen[e.id]=false;render();
 }
 function journalChip(){const n=jDue().length;if(!J.length)return "";return `<div class="row"><span class="chip ${n?"warn":"A"}">${n?`${n} tough topic${n>1?"s":""} due`:"Tough topics all reviewed"}</span>${n?`<button data-act="jstart">Review now</button>`:""}</div>`}
+let rcArea="all", rcSize=5, rcCid="", rcBusy=false;
+function ivlLabel(d){return d<=1?"tomorrow":d<14?d+" days":d<60?Math.round(d/7)+" weeks":Math.round(d/30)+" months"}
 V.journal=()=>{
-  const ps=activePapers(), due=jDue(), t=todayISO();
+  const ps=activePapers(), due=jDue(), t=todayISO(), RS=revisionStats(), SG=tsSuggestions();
   if(!jPrefill||!ps.some(p=>p.id===jPrefill.p))jPrefill={p:ps[0].id,cid:""};
   const fp=jPrefill.p, fcid=jPrefill.cid;
-  let review="";
+  let top="";
   if(rv){const e=J.find(x=>x.id===rv.q[rv.i]);
     if(!e){rv=null}else{const pr=reviewPrompt(e);
-    review=`<div class="card hero"><div class="row between"><span class="label">Review ${rv.i+1} of ${rv.q.length}</span><button class="ghost" data-act="jend">End review</button></div>
-      <div class="row"><span class="chip"><span class="swatch" style="background:${col(e.p)}"></span>${paperOf(e.p).short}</span><span class="small muted">${esc(chName(e))}</span></div>
+    top=`<div class="card hero"><div class="row between"><span class="label">Review ${rv.i+1} of ${rv.q.length}</span><button class="ghost" data-act="jend">End review</button></div>
+      <div class="row"><span class="chip"><span class="swatch" style="background:${col(e.p)}"></span>${paperOf(e.p).short}</span><span class="small muted">${esc(chName(e))} · mastery ${mastery(e).score}</span></div>
       <h3>${esc(e.topic)}</h3><p style="margin:0;font-weight:500">${esc(pr.q)}</p>
-      ${rv.show?`<div class="prose small" style="border-top:1px solid var(--line);padding-top:10px">${pr.a}</div>
-        <div class="row"><span class="small muted">How did you do?</span><button class="danger" data-act="jrate" data-r="forgot">Forgot · tomorrow</button><button data-act="jrate" data-r="hard">Hard · ${Math.max(1,Math.round(INTERVALS[e.box||0]/2))}d</button><button class="primary" data-act="jrate" data-r="good">Got it · ${INTERVALS[Math.min((e.box||0)+1,INTERVALS.length-1)]}d</button></div>`
+      ${rv.apply?`<div class="prose small" style="border-top:1px solid var(--line);padding-top:10px"><p><b>Have you solved a question on this without help since your last review?</b> Solving questions is what moves a topic towards mastered.</p></div>
+        <div class="row"><button class="primary" data-act="japp" data-t="std">Yes, a standard question</button><button class="primary" data-act="japp" data-t="new">Yes, an unfamiliar one</button><button data-act="japp" data-t="fail">Tried, couldn't solve</button><button class="ghost" data-act="japp" data-t="skip">Not yet</button></div>`
+      :rv.show?`<div class="prose small" style="border-top:1px solid var(--line);padding-top:10px">${pr.a}</div>
+        <div class="row"><span class="small muted">How did you do?</span>${[["forgot","Forgot","danger"],["hard","Hard",""],["good","Good","primary"],["easy","Easy",""]].map(([r,l,c])=>`<button class="${c}" data-act="jrate" data-r="${r}">${l} · ${ivlLabel(previewIvl(e,r))}</button>`).join("")}</div>`
       :`<div class="row"><button class="primary" data-act="jshow">Show answer</button><span class="small muted">Answer in your head (or on paper) first.</span></div>`}</div>`}}
-  const list=J.filter(e=>(jPaperF==="all"||e.p===jPaperF)&&(jFilter==="all"||(jFilter==="due"&&!e.mastered&&e.due<=t)||(jFilter==="active"&&!e.mastered)||(jFilter==="mastered"&&e.mastered))).sort((a,b)=>a.due<b.due?-1:1);
-  const item=e=>{const open=jOpen===e.id, bk=bankFor(e), c=e.card;return `<div class="card" style="gap:8px">
-    <div class="row between"><div class="row"><span class="chip"><span class="swatch" style="background:${col(e.p)}"></span>${paperOf(e.p).short}</span><b>${esc(e.topic)}</b>${e.mastered?'<span class="chip A">mastered</span>':e.due<=t?'<span class="chip warn">due</span>':""}</div>
-      <div class="row small muted"><span title="Box ${(e.box||0)+1} of ${INTERVALS.length}">${INTERVALS.map((_,i)=>`<span class="swatch" style="background:${i<=(e.box||0)?"var(--accent)":"var(--sunk)"}"></span>`).join("")}</span><span class="num">${e.mastered?"":"next "+fmtShort(parse(e.due))}</span><button class="ghost" data-act="jopen" data-id="${e.id}">${open?"Hide":"Open"}</button></div></div>
-    <span class="small muted">${esc(chName(e))} · ${esc(e.kind)} · added ${fmtShort(parse(e.created))} · ${(e.reviews||[]).length} reviews</span>
+  if(!top&&rt){if(rt.done){const R=rt.res,right=R.filter(r=>r.g==="right").length,part=R.filter(r=>r.g==="partial").length,miss=R.filter(r=>r.g==="missed");
+      top=`<div class="card hero"><div class="row between"><span class="label">Recall test finished</span><button class="ghost" data-act="rcclose">Close</button></div>
+        <div class="row" style="gap:24px"><div class="stat"><span class="label">Right</span><b>${right}/${R.length}</b></div><div class="stat"><span class="label">Partly</span><b>${part}</b></div><div class="stat"><span class="label">Missed</span><b>${miss.length}</b></div></div>
+        ${miss.length?`<div class="prose small"><p><b>Missed${S.settings.autoRecall!==false?" (added to Tough topics, due today)":""}:</b></p><ul>${miss.map(r=>`<li>${esc(r.x.q)} <span class="muted">→ ${esc(r.x.a)}</span></li>`).join("")}</ul></div>`:`<p class="small" style="margin:0">Clean sheet. These cards come back later at longer intervals.</p>`}
+        <div class="row"><button class="primary" data-act="rcstart">Another test</button></div></div>`}
+    else{const x=rt.items[rt.i];top=`<div class="card hero"><div class="row between"><span class="label">Recall test · ${rt.i+1} of ${rt.items.length}</span><button class="ghost" data-act="rcclose">Stop</button></div>
+      <div class="row"><span class="chip"><span class="swatch" style="background:${col(x.p)}"></span>${paperOf(x.p).short}</span><span class="small muted">${esc(x.area)}${chRow(x.cid)?" · "+esc(chRow(x.cid)[0]):""}</span></div>
+      <h3>${esc(x.q)}</h3>
+      ${rt.show?`<div class="prose small" style="border-top:1px solid var(--line);padding-top:10px"><p>${esc(x.a)}</p>${x.ai?'<p class="muted">Written by Claude. Check against ICAI material.</p>':""}</div>
+        <div class="row"><button class="primary" data-act="rcg" data-g="right">Got it right</button><button data-act="rcg" data-g="partial">Partly</button><button class="danger" data-act="rcg" data-g="missed">Missed it</button></div>`
+      :`<div class="row"><button class="primary" data-act="rcshow">Show answer</button><span class="small muted">Say or write the answer first.</span></div>`}</div>`}}
+  const list=J.filter(e=>(jPaperF==="all"||e.p===jPaperF)&&(jFilter==="all"||(jFilter==="due"&&!e.mastered&&e.due<=t)||(jFilter==="active"&&!e.mastered)||(jFilter==="mastered"&&e.mastered)||(jFilter==="forgotten"&&!e.mastered&&(e.lapses||0)>=2))).sort((a,b)=>jFilter==="active"||jFilter==="due"?topicPriority(b)-topicPriority(a):a.due<b.due?-1:1);
+  const item=e=>{const open=jOpen===e.id,bk=bankFor(e),c=e.card,M=mastery(e);return `<div class="card" style="gap:8px">
+    <div class="row between"><div class="row"><span class="chip"><span class="swatch" style="background:${col(e.p)}"></span>${paperOf(e.p).short}</span><b>${esc(e.topic)}</b>${e.mastered?'<span class="chip A">mastered</span>':e.due<t?'<span class="chip bad">overdue</span>':e.due===t?'<span class="chip warn">due</span>':""}${(e.lapses||0)>=2?`<span class="chip bad">forgotten ${e.lapses}×</span>`:""}</div>
+      <div class="row small muted" style="flex-wrap:nowrap"><span class="num">mastery ${M.score}</span><div class="mini" style="width:60px"><i style="width:${M.score}%"></i></div><span class="num">${e.mastered?"":"next "+fmtShort(parse(e.due))}</span><button class="ghost" data-act="jopen" data-id="${e.id}">${open?"Hide":"Open"}</button></div></div>
+    <span class="small muted">${esc(chName(e))} · ${esc(e.kind)} · added ${fmtShort(parse(e.created))} · ${(e.reviews||[]).length} reviews · every ~${ivlLabel(e.ivl||1)}</span>
     ${open?`<div class="grid" style="gap:10px">
       ${e.why?`<p class="small" style="margin:0"><b>Why it's hard:</b> ${esc(e.why)}</p>`:""}
-      <label class="f">What finally clicked (write it in your own words)<textarea rows="2" id="jc-${e.id}" data-act="jclick" data-id="${e.id}" style="font-family:var(--body)">${esc(e.clicked||"")}</textarea></label>
-      ${c?`<div class="prose small" style="max-width:none;border:1px solid var(--line);border-radius:8px;padding:12px"><div class="row between"><span class="label">Revision card · Claude · ${fmtShort(parse(c.at))}</span><span class="small muted">Check against ICAI material</span></div>
-        <p>${esc(c.summary)}</p><ul>${c.points.map(x=>`<li>${esc(x)}</li>`).join("")}</ul>
+      <div class="calc">${MASTERY_PARTS.map(([k,l,w])=>`<span>${l}</span><span class="num">${Math.round(M.parts[k]*100)}% × ${w} = ${(M.parts[k]*w).toFixed(1)}</span>`).join("")}<span><b>Mastery</b> <span class="muted small">${e.mastered?"mastered":M.need.length?"still needs: "+M.need.join(", "):""}</span></span><span class="num"><b>${M.score}</b></span></div>
+      <div class="row small"><span class="muted">Solved a question on it?</span><button class="ghost" data-act="jappx" data-id="${e.id}" data-t="std">Yes, standard</button><button class="ghost" data-act="jappx" data-id="${e.id}" data-t="new">Yes, unfamiliar</button><button class="ghost" data-act="jappx" data-id="${e.id}" data-t="fail">Couldn't solve</button><span class="muted">${(e.apps||[]).length?`${(e.apps||[]).filter(a=>a.ok).length} of ${(e.apps||[]).length} solved`:"none recorded"}</span></div>
+      <label class="f">What finally clicked (in your own words; counts towards conceptual understanding)<textarea rows="2" id="jc-${e.id}" data-act="jclick" data-id="${e.id}" style="font-family:var(--body)">${esc(e.clicked||"")}</textarea></label>
+      ${c?`<div class="prose small" style="max-width:none;border:1px solid var(--line);border-radius:8px;padding:12px"><div class="row between"><span class="label">${e.src==="recall"?"Recall card":"Revision card · Claude"} · ${fmtShort(parse(c.at))}</span><span class="small muted">Check against ICAI material</span></div>
+        <p>${esc(c.summary)}</p>${c.points.length>1?`<ul>${c.points.map(x=>`<li>${esc(x)}</li>`).join("")}</ul>`:""}
         ${c.mnemonic?`<p><b>Memory hook:</b> ${esc(c.mnemonic)}</p>`:""}
         ${c.traps.length?`<p><b>Exam traps:</b></p><ul>${c.traps.map(x=>`<li>${esc(x)}</li>`).join("")}</ul>`:""}
-        ${c.questions.length?`<p><b>Self-test:</b></p><ul>${c.questions.map(q=>`<li>${esc(q.q)} <span class="muted">→ ${esc(q.a)}</span></li>`).join("")}</ul>`:""}
+        ${c.questions.length&&e.src!=="recall"?`<p><b>Self-test:</b></p><ul>${c.questions.map(q=>`<li>${esc(q.q)} <span class="muted">→ ${esc(q.a)}</span></li>`).join("")}</ul>`:""}
         ${c.refs.length?`<p class="muted">ICAI references to check: ${c.refs.map(esc).join(" · ")}</p>`:""}</div>`:""}
       ${bk.map(b=>`<div class="prose small" style="max-width:none;border:1px dashed var(--line);border-radius:8px;padding:12px"><span class="label">Quick bank · ${esc(b.t)}</span><ul>${b.pts.map(x=>`<li>${esc(x)}</li>`).join("")}</ul></div>`).join("")}
       <div class="row">
-        ${sampleNs?`<button class="primary" data-act="jgen" data-id="${e.id}" ${jGen[e.id]?"disabled":""}>${jGen[e.id]?"Writing card…":c?"Rewrite card with Claude":"Make a revision card with Claude"}</button>`:""}
+        ${sampleNs&&e.src!=="recall"?`<button class="primary" data-act="jgen" data-id="${e.id}" ${jGen[e.id]?"disabled":""}>${jGen[e.id]?"Writing card…":c?"Rewrite card with Claude":"Make a revision card with Claude"}</button>`:""}
         <button data-act="jrev1" data-id="${e.id}">Review this now</button>
         ${e.mastered?`<button data-act="junmaster" data-id="${e.id}">Move back to active</button>`:""}
         ${jDel===e.id?`<span class="confirm"><span class="small">Delete this topic?</span><button class="danger" data-act="jdelyes" data-id="${e.id}">Delete</button><button data-act="jdelno">Keep</button></span>`:`<button class="ghost danger" data-act="jdel" data-id="${e.id}">Delete</button>`}
       </div></div>`:""}
   </div>`};
+  const srcL={repeated:"Repeated in mocks",mock:"Mock mistake",eval:"Evaluation",weak:"Low confidence"};
+  const tile=(l,v,sub)=>`<div class="tile"><span class="label">${l}</span><b>${v}</b><span class="sub">${sub}</span></div>`;
+  const wmax=100;
   return `
   <div class="row between"><h2>Tough topics</h2>${due.length?`<button class="primary" data-act="jstart">Start review · ${due.length} due</button>`:`<span class="small muted">${J.length?"Nothing due today":"Your private journal of hard topics"}</span>`}</div>
-  ${review}
+  ${top}
+  <div class="tiles">
+    ${tile("Due today",RS.due,RS.overdue?RS.overdue+" overdue":"none overdue")}
+    ${tile("Mastered",RS.mastered,"of "+J.length+" topics")}
+    ${tile("Forgotten 2+ times",RS.forgotten,"active topics")}
+    ${tile("Reviews this week",RS.reviews7,"topic reviews + recall cards")}
+  </div>
+  <div class="grid g2">
+    <div class="card"><div class="row between"><div class="label">Recall accuracy by week</div><span class="small muted">reviews and recall tests</span></div>
+      <div class="grid" style="grid-template-columns:repeat(4,1fr);gap:10px;align-items:end;height:120px">${RS.weeks.map((w,i)=>`<div class="grid" style="gap:4px;align-content:end;height:100%"><span class="num small" style="text-align:center">${w.pct==null?"–":w.pct+"%"}</span><div style="height:${w.pct==null?2:Math.max(4,w.pct/wmax*80)}px;background:${i===3?"var(--accent)":"var(--h2)"};border-radius:4px"></div><span class="small muted" style="text-align:center">${i===3?"this week":fmtShort(parse(w.b))}</span></div>`).join("")}</div>
+      <p class="small muted" style="margin:0">Good or Easy and "got it right" count as recalled; Hard and "partly" count half. ${RS.weeks[3].n?RS.weeks[3].n+" answers this week.":"No answers this week yet."}</p></div>
+    <div class="card"><div class="label">Review next</div>
+      ${RS.next.length?RS.next.map(e=>{const M=mastery(e);return `<div class="row between small"><span class="row" style="gap:6px;min-width:0"><span class="swatch" style="background:${col(e.p)}"></span><span style="min-width:0">${esc(e.topic.length>70?e.topic.slice(0,68)+"…":e.topic)}</span></span><span class="num muted" style="white-space:nowrap">${e.due<t?"overdue":e.due===t?"today":fmtShort(parse(e.due))} · ${M.score}</span></div>`}).join("")+`<button data-act="jnext">Review these now</button>`:`<p class="small muted" style="margin:0">No active topics yet.</p>`}
+      <p class="small muted" style="margin:0">Ordered by days overdue, chapter priority, times forgotten and how far each topic is from mastery.</p></div>
+  </div>
+  <div class="grid g2">
+    <div class="card"><div class="row between"><div class="label">Suggested tough topics</div><span class="small muted">${SG.length?SG.length+" found":"none right now"}</span></div>
+      ${SG.length?SG.slice(0,6).map(sg=>`<div class="pri"><div class="row" style="gap:8px"><span class="kind">${srcL[sg.src]}</span><span class="chip"><span class="swatch" style="background:${col(sg.p)}"></span>${paperOf(sg.p).short}</span></div><b>${esc(sg.topic)}</b><span class="small muted">${esc(sg.why)}</span>
+        <div class="row"><button class="primary" data-act="sgadd" data-k="${esc(sg.key)}">Add</button><button class="ghost" data-act="sgdis" data-k="${esc(sg.key)}">Dismiss</button></div></div>`).join("")+(SG.length>1?`<button data-act="sgall">Add all ${SG.length}</button>`:"")
+      :`<p class="small muted" style="margin:0">Suggestions appear from mistakes repeated across mocks, costly mock mistakes (4+ marks), weak answers in evaluations, and chapters you rated 1–2 for confidence.</p>`}</div>
+    <div class="card"><div class="label">Recall test</div>
+      <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px">
+        <label class="f">Area<select id="rcArea" data-act="rcarea"><option value="all">All areas</option>${RC_AREAS.map(a=>`<option ${rcArea===a?"selected":""}>${a}</option>`).join("")}</select></label>
+        <label class="f">Cards<select id="rcSize" data-act="rcsize">${[5,10].map(n=>`<option ${rcSize===n?"selected":""}>${n}</option>`).join("")}</select></label>
+      </div>
+      <div class="row"><button class="primary" data-act="rcstart">Start recall test</button><span class="small muted">${pickRecall(rcArea,999).length} cards ready of ${recallPool(rcArea).length}</span></div>
+      ${sampleNs?`<div class="grid" style="gap:8px;border-top:1px solid var(--line);padding-top:10px"><label class="f">Or have Claude write 5 questions on a chapter<select id="rcCh" data-act="rccid"><option value="">Choose a chapter…</option>${ps.map(p=>`<optgroup label="${p.short}">${CH[p.id].map(r=>`<option value="${r[3]}" ${rcCid===r[3]?"selected":""}>${esc(r[0].length>60?r[0].slice(0,58)+"…":r[0])}</option>`).join("")}</optgroup>`).join("")}</select></label>
+        <div class="row"><button data-act="rcai" ${rcBusy?"disabled":""}>${rcBusy?"Writing questions…":"Generate and start"}</button></div></div>`:""}
+      <label class="row small" style="gap:6px"><input type="checkbox" class="chk" data-act="rcauto" ${S.settings.autoRecall!==false?"checked":""}> Add missed cards to Tough topics automatically</label>
+      <p class="small muted" style="margin:0">${RECALL.length} built-in cards on Ind AS, Standards on Auditing, AFM formulas, Direct Tax, GST & Customs and definitions. Cards you get right come back at longer gaps; missed ones come back tomorrow. DT and IDT figures depend on the Act for your attempt.</p></div>
+  </div>
   <div class="grid g2">
     <div class="card"><div class="label">Add a topic you find difficult</div>
       <form id="jForm" class="grid" style="grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px">
         <label class="f">Paper<select id="jP" data-act="jpaper">${ps.map(p=>`<option value="${p.id}" ${p.id===fp?"selected":""}>${p.short}</option>`).join("")}</select></label>
         <label class="f">Chapter<select id="jCh"><option value="">General</option>${CH[fp].map(c=>`<option value="${c[3]}" ${c[3]===fcid?"selected":""}>${esc(c[0].length>60?c[0].slice(0,58)+"…":c[0])}</option>`).join("")}</select></label>
         <label class="f" style="grid-column:1/-1">Topic<input id="jT" placeholder="e.g. Sale and leaseback gain calculation" required></label>
-        <label class="f">Type<select id="jK"><option>Concept</option><option>Formula / numerical</option><option>Provision / section</option><option>Mock mistake</option><option>Keeps slipping from memory</option></select></label>
+        <label class="f">Type<select id="jK"><option>Concept</option><option>Formula / numerical</option><option>Provision / section</option><option>Practice question I got wrong</option><option>Mock mistake</option><option>Keeps slipping from memory</option></select></label>
         <label class="f" style="grid-column:1/-1">Why is it hard? (optional)<input id="jW" placeholder="I mix up which portion of the gain to recognise"></label>
         <button class="primary" style="grid-column:1/-1">Add to journal</button>
       </form>
-      <p class="small muted" style="margin:0">New topics come up for review tomorrow, then after 3, 7, 14, 30 and 60 days. "Forgot" sends a topic back to the start. You can also add from the Syllabus tab.</p>
+      <p class="small muted" style="margin:0">Got a practice question wrong? Add it with the type "Practice question I got wrong". You can also add from Syllabus, Mocks and Evaluate.</p>
     </div>
-    <div class="card"><div class="label">How it keeps topics on top of your mind</div><div class="prose small">
-      <ul><li><b>Write it down</b> the moment something feels hard: in class, in a mock, in revision.</li>
-      <li><b>Instant help</b>: matching cards from the quick bank appear on their own${sampleNs?", and Claude can write a revision card with points, a memory hook, exam traps and self-test questions":""}.</li>
-      <li><b>Spaced recall</b>: answer the question before revealing it, then rate yourself. Hard topics come back sooner.</li>
-      <li><b>Write "what clicked"</b> in your own words once it makes sense. That line is often the best revision note you'll have.</li></ul>
-      <div class="row" style="gap:24px"><div class="stat"><span class="label">Topics</span><b>${J.length}</b></div><div class="stat"><span class="label">Due</span><b>${due.length}</b></div><div class="stat"><span class="label">Mastered</span><b>${J.filter(e=>e.mastered).length}</b></div></div>
+    <div class="card"><div class="label">How revision adapts</div><div class="prose small">
+      <ul><li><b>Your own gaps.</b> Each topic's next review depends on how you rate it: Good and Easy stretch the gap, Hard shortens it, Forgot starts it again tomorrow. The buttons show the next gap.</li>
+      <li><b>Importance and exam date.</b> Priority-A chapters and topics you've forgotten twice come back sooner, and gaps shrink as the paper approaches so everything is reviewed before the exam.</li>
+      <li><b>Mastery means you can use it.</b> A topic is mastered only with a mastery score of 80+, at least one question solved without help, four or more reviews and a gap of three weeks or more. Reading it again doesn't count.</li></ul>
+      ${RS.avgMastery!=null?`<p class="small muted" style="margin:0">Average mastery of active topics: <b>${RS.avgMastery}</b></p>`:""}
     </div></div>
   </div>
   <div class="row between">
-    <div class="pills">${[["due","Due"],["active","Active"],["mastered","Mastered"],["all","All"]].map(([k,l])=>`<button class="${jFilter===k?"on":""}" data-act="jfilter" data-f="${k}">${l}</button>`).join("")}</div>
+    <div class="pills">${[["due","Due"],["active","Active"],["forgotten","Forgotten 2+×"],["mastered","Mastered"],["all","All"]].map(([k,l])=>`<button class="${jFilter===k?"on":""}" data-act="jfilter" data-f="${k}">${l}</button>`).join("")}</div>
     <div class="pills"><button class="${jPaperF==="all"?"on":""}" data-act="jpf" data-p="all">All papers</button>${ps.map(p=>`<button class="${jPaperF===p.id?"on":""}" data-act="jpf" data-p="${p.id}">${p.short}</button>`).join("")}</div>
   </div>
-  <div class="grid">${list.map(item).join("")||`<div class="card"><p class="muted small" style="margin:0">${J.length?"No topics match this filter.":"No topics yet. Add the first one above, e.g. a mock mistake from this week."}</p></div>`}</div>`;
+  <div class="grid">${list.map(item).join("")||`<div class="card"><p class="muted small" style="margin:0">${J.length?"No topics match this filter.":"No topics yet. Add one above, accept a suggestion, or take a recall test."}</p></div>`}</div>`;
 };
 function jClick(b){const a=b.dataset.act,id=b.dataset.id,e=id&&J.find(x=>x.id===id);
-  if(a==="jstart"){const q=jDue().sort((x,y)=>x.due<y.due?-1:1).map(x=>x.id);if(!q.length)return true;rv={q,i:0,show:false};if(view!=="journal")location.hash="journal";else render();window.scrollTo(0,0);return true}
-  if(a==="jrev1"){rv={q:[id],i:0,show:false};render();window.scrollTo(0,0);return true}
+  if(a==="jstart"){const q=jDue().sort((x,y)=>topicPriority(y)-topicPriority(x)).map(x=>x.id);if(!q.length)return true;rt=null;rv={q,i:0,show:false};if(view!=="journal")location.hash="journal";else render();window.scrollTo(0,0);return true}
+  if(a==="jnext"){const q=revisionStats().next.map(x=>x.id);if(!q.length)return true;rt=null;rv={q,i:0,show:false};render();window.scrollTo(0,0);return true}
+  if(a==="jrev1"){rt=null;rv={q:[id],i:0,show:false};render();window.scrollTo(0,0);return true}
   if(a==="jshow"){rv.show=true;render();return true}
   if(a==="jend"){rv=null;render();return true}
-  if(a==="jrate"){const cur=J.find(x=>x.id===rv.q[rv.i]);if(cur)rate(cur,b.dataset.r);rv.i++;rv.show=false;if(rv.i>=rv.q.length){rv=null;toast("Review done")}render();return true}
+  if(a==="jrate"){const cur=J.find(x=>x.id===rv.q[rv.i]);if(cur){const r=b.dataset.r;rate(cur,r);const recent=(cur.apps||[]).some(x=>diffDays(parse(x.d),parse(todayISO()))<=14);if((r==="good"||r==="easy")&&!recent){rv.apply=true;render();return true}}
+    rv.i++;rv.show=false;if(rv.i>=rv.q.length){rv=null;toast("Review done")}render();return true}
+  if(a==="japp"){const cur=J.find(x=>x.id===rv.q[rv.i]),tt=b.dataset.t;if(cur&&tt!=="skip")recordApp(cur,tt==="fail"?"std":tt,tt!=="fail");rv.apply=false;rv.i++;rv.show=false;if(rv.i>=rv.q.length){rv=null;toast("Review done")}render();return true}
+  if(a==="jappx"&&e){const tt=b.dataset.t;recordApp(e,tt==="fail"?"std":tt,tt!=="fail");render();toast(e.mastered?"Recorded. This topic is now mastered.":"Recorded");return true}
   if(a==="jopen"){jOpen=jOpen===id?null:id;jDel=null;render();return true}
   if(a==="jgen"&&e){genCard(e);return true}
-  if(a==="junmaster"&&e){e.mastered=false;e.box=Math.min(e.box||0,3);e.due=todayISO();jPut(e);render();return true}
+  if(a==="junmaster"&&e){e.mastered=false;e.ivl=Math.min(e.ivl||1,7);e.due=todayISO();jPut(e);render();return true}
   if(a==="jdel"){jDel=id;render();return true}
   if(a==="jdelno"){jDel=null;render();return true}
   if(a==="jdelyes"){jRemove(id);jDel=null;render();toast("Topic deleted");return true}
   if(a==="jfilter"){jFilter=b.dataset.f;render();return true}
   if(a==="jpf"){jPaperF=b.dataset.p;render();return true}
   if(a==="tojournal"){jPrefill={p:b.dataset.p,cid:b.dataset.c};location.hash="journal";setTimeout(()=>{const el=document.getElementById("jT");if(el)el.focus()},50);return true}
+  if(a==="sgadd"||a==="sgall"){const L=tsSuggestions(),pick=a==="sgall"?L:L.filter(x=>x.key===b.dataset.k);let n=0;pick.forEach(sg=>{n+=acceptSuggestion(sg)});save();render();toast(n?`Added ${n} topic${n>1?"s":""}. First review tomorrow.`:"Nothing to add");return true}
+  if(a==="sgdis"){S.tsDismiss=Object.assign({},S.tsDismiss,{[b.dataset.k]:todayISO()});save();render();return true}
+  if(a==="rcstart"){const items=pickRecall(rcArea,rcSize);if(!items.length){toast("No cards are due in this area right now. Try another area later.");return true}rv=null;rt={area:rcArea,items,i:0,show:false,res:[]};render();window.scrollTo(0,0);return true}
+  if(a==="rcshow"){rt.show=true;render();return true}
+  if(a==="rcg"){const x=rt.items[rt.i],g=b.dataset.g,out=gradeRecall(x,g);rt.res.push({x,g,out});rt.i++;rt.show=false;if(rt.i>=rt.items.length)finishRecall();else save();render();return true}
+  if(a==="rcclose"){if(rt&&!rt.done&&rt.res.length)finishRecall();rt=null;render();return true}
+  if(a==="rcai"){const cid=(document.getElementById("rcCh")||{}).value||rcCid;if(!cid){toast("Choose a chapter first");return true}rcCid=cid;rcBusy=true;render();
+    aiRecall(cid).then(items=>{rcBusy=false;rv=null;rt={area:"Claude",items,i:0,show:false,res:[]};render();window.scrollTo(0,0)}).catch(err=>{rcBusy=false;render();const c=err&&err.code;toast(c==="not_granted"?"Claude access was declined for this page":c==="rate_limited"?"Claude is busy. Try again in a minute.":"Couldn't write questions. Try again.")});return true}
   return false}
 
 /* ============ ANSWER SHEET EVALUATOR ============ */
@@ -1036,7 +1248,7 @@ function evClick(b){const a=b.dataset.act,id=b.dataset.id,ev=id&&EV.find(x=>x.id
     let um=na.reduce((a,q)=>a+q.max,0);const tot=mist.reduce((a,x)=>a+x.lost,0)+um;
     if(tot>room&&tot>0){const f=room/tot;mist.forEach(x=>x.lost=Math.floor(x.lost*f*2)/2);mist=mist.filter(x=>x.lost>0);um=Math.floor(um*f*2)/2}
     S.mocks.push({id:"m"+Date.now().toString(36),paper:ev.paper,num:"",date:ev.date,score:ev.result.total,max:ev.max,timeMins:null,qAtt:qs.length-na.length,qUnatt:na.length,unattMarks:um,diff:null,src:"Claude-evaluated · "+ev.name,mistakes:mist});ev.savedMock=true;evPut(ev);save();render();toast("Saved to Mocks");return true}
-  if(a==="evtough"&&ev){ev.result.questions.filter(q=>q.status==="partial"||q.status==="weak").forEach((q,i)=>{const miss=q.missed[0]||q.feedback;jPut({id:"j"+Date.now().toString(36)+i,p:ev.paper,cid:null,topic:`${ev.name} Q${q.q}: ${miss.length>90?miss.slice(0,88)+"…":miss}`,kind:"Mock mistake",why:q.missed.join("; ")+(q.icai_tip?" | ICAI: "+q.icai_tip:""),created:todayISO(),box:0,due:iso(addDays(new Date(),1)),reviews:[],mastered:false,clicked:"",card:null})});ev.addedTough=true;evPut(ev);render();toast("Added to Tough topics");return true}
+  if(a==="evtough"&&ev){ev.result.questions.filter(q=>q.status==="partial"||q.status==="weak").forEach((q,i)=>{const miss=q.missed[0]||q.feedback;jPut({src:"eval",id:"j"+Date.now().toString(36)+i,p:ev.paper,cid:null,topic:`${ev.name} Q${q.q}: ${miss.length>90?miss.slice(0,88)+"…":miss}`,kind:"Mock mistake",why:q.missed.join("; ")+(q.icai_tip?" | ICAI: "+q.icai_tip:""),created:todayISO(),box:0,due:iso(addDays(new Date(),1)),reviews:[],mastered:false,clicked:"",card:null})});ev.addedTough=true;evPut(ev);render();toast("Added to Tough topics");return true}
   return false}
 function evChange(b){const a=b.dataset.act;
   if(a==="evfile"){evFiles[b.dataset.k].push(...Array.from(b.files||[]));render();return true}
@@ -1729,7 +1941,7 @@ function applyBackup(b,reason){takeRestorePoint(reason);
   const jk=new Set(b.journal.map(e=>e.id));J.slice().forEach(e=>{if(!jk.has(e.id))jRemove(e.id)});b.journal.forEach(e=>{if(TOMB[e.id]){delete TOMB[e.id];saveTomb()}jPut(Object.assign({},e))});
   const ek=new Set(b.evals.map(e=>e.id));EV.slice().forEach(e=>{if(!ek.has(e.id))evRemove(e.id)});b.evals.forEach(e=>{if(TOMB[e.id]){delete TOMB[e.id];saveTomb()}evPut(Object.assign({},e))});
   save();render()}
-const RESET_PARTS=[["progress","Syllabus progress, revision history and chapter notes"],["hours","Study hours, focus sessions and a running timer"],["mocks","Mock scores"],["evals","Evaluations"],["journal","Tough topics and their review history"],["tasks","Daily plans and your own tasks"],["checks","Checklists"],["settings","Settings: hours, targets, squad sharing (exam dates and plan start are kept)"]];
+const RESET_PARTS=[["progress","Syllabus progress, revision history and chapter notes"],["hours","Study hours, focus sessions and a running timer"],["mocks","Mock scores"],["evals","Evaluations"],["journal","Tough topics, review history and recall-test results"],["tasks","Daily plans and your own tasks"],["checks","Checklists"],["settings","Settings: hours, targets, squad sharing (exam dates and plan start are kept)"]];
 function applyReset(parts){takeRestorePoint("Before erasing: "+parts.map(k=>RESET_PARTS.find(x=>x[0]===k)[1].split(/[,:(]/)[0].trim().toLowerCase()).join(", "));
   if(parts.includes("progress"))S.ch={};
   if(parts.includes("hours")){S.log={};S.sessions=[];timer=null;store.del(TK)}
@@ -1737,7 +1949,7 @@ function applyReset(parts){takeRestorePoint("Before erasing: "+parts.map(k=>RESE
   if(parts.includes("tasks")){S.todos={};S.plan={}}
   if(parts.includes("checks"))S.checks={};
   if(parts.includes("settings")){const keep={examDates:S.settings.examDates,startDate:S.settings.startDate};S.settings=Object.assign(freshState().settings,keep)}
-  if(parts.includes("journal"))J.slice().forEach(e=>jRemove(e.id));
+  if(parts.includes("journal")){J.slice().forEach(e=>jRemove(e.id));S.recall={};S.recallLog=[];S.tsDismiss={}}
   if(parts.includes("evals"))EV.slice().forEach(e=>evRemove(e.id));
   save();if(parts.includes("settings"))pushBoard();render()}
 function dataCard(){const rp=store.get(LS+".restorePoint",null),pv=bk.preview,c=pv&&backupCounts(pv),sel=RESET_PARTS.filter(([k])=>bk.reset[k]);
@@ -1908,7 +2120,7 @@ document.addEventListener("click",e=>{
     if(a==="mkmist"){mkOpen=mkOpen===b.dataset.id?null:b.dataset.id;render();return}
     if(a==="mxdel"){const m=S.mocks.find(z=>z.id===b.dataset.m);if(m){m.mistakes=(m.mistakes||[]).filter(x=>x.id!==b.dataset.x);save();render()}return}
     if(a==="mxtough"){const m=S.mocks.find(z=>z.id===b.dataset.m),x=m&&(m.mistakes||[]).find(y=>y.id===b.dataset.x);if(!x)return;
-      jPut({id:"j"+Date.now().toString(36),p:m.paper,cid:x.cid||null,topic:`${m.num||m.src||"Mock"} Q${x.q||"?"}: ${(CAT[x.cat]||CAT.unclassified).label}${x.note?" · "+x.note:""}`.slice(0,140),kind:"Mock mistake",why:`${x.lost} marks lost on ${fmt(m.date)}.${x.note?" "+x.note:""}`,created:todayISO(),box:0,due:iso(addDays(new Date(),1)),reviews:[],mastered:false,clicked:"",card:null});
+      jPut({src:"mock",id:"j"+Date.now().toString(36),p:m.paper,cid:x.cid||null,topic:`${m.num||m.src||"Mock"} Q${x.q||"?"}: ${(CAT[x.cat]||CAT.unclassified).label}${x.note?" · "+x.note:""}`.slice(0,140),kind:"Mock mistake",why:`${x.lost} marks lost on ${fmt(m.date)}.${x.note?" "+x.note:""}`,created:todayISO(),box:0,due:iso(addDays(new Date(),1)),reviews:[],mastered:false,clicked:"",card:null});
       x.tough=true;save();render();toast("Added to Tough topics. First review tomorrow.");return}
     if(a==="dismissNotice"){notice("");return}
     if(a==="warnall"){warnAll=!warnAll;render();return}
@@ -1923,7 +2135,11 @@ document.addEventListener("change",e=>{
   if(a==="jpaper"){const pid=b.value;jPrefill={p:pid,cid:""};const sel=document.getElementById("jCh");if(sel)sel.innerHTML='<option value="">General</option>'+CH[pid].map(c=>`<option value="${c[3]}">${esc(c[0].length>60?c[0].slice(0,58)+"…":c[0])}</option>`).join("");return}
   if(a==="mxcat"){const m=S.mocks.find(z=>z.id===b.dataset.m),x=m&&(m.mistakes||[]).find(y=>y.id===b.dataset.x);if(x&&b.value){x.cat=b.value;save();render();toast("Classified")}return}
   if(a==="tpaper"){tForm.p=b.value;tForm.cid="";const sel=document.getElementById("tCh");if(sel)sel.innerHTML='<option value="">Any chapter</option>'+CH[b.value].map(r=>`<option value="${r[3]}">${esc(r[0].length>50?r[0].slice(0,48)+"…":r[0])}</option>`).join("");return}
-  if(a==="jclick"){const e=J.find(x=>x.id===b.dataset.id);if(e){e.clicked=b.value;jPut(e)}return}
+  if(a==="jclick"){const e=J.find(x=>x.id===b.dataset.id);if(e){e.clicked=b.value;e.mastered=mastery(e).mastered;jPut(e)}return}
+  if(a==="rcarea"){rcArea=b.value;render();return}
+  if(a==="rcsize"){rcSize=+b.value||5;return}
+  if(a==="rccid"){rcCid=b.value;return}
+  if(a==="rcauto"){S.settings.autoRecall=b.checked;save();return}
   if(a==="fill"){const dd=defaultDates(b.value);for(const k in dd){const el=document.getElementById("ex-"+k);if(el)el.value=dd[k]}return}
   if(a==="board"){if(canWrite===false&&b.checked){b.checked=false;toast("Your access doesn't allow joining the board yet. See the note on this page.");return}S.settings.onBoard=b.checked;save();pushBoard();render();return}
   if(a==="share"){S.settings.share=Object.assign({},S.settings.share,{[b.dataset.k]:b.checked});save();pushBoard();render();return}
@@ -1949,7 +2165,7 @@ document.addEventListener("submit",e=>{
     const L=mockLost(m),room=m.max-m.score-L.total;if(lost>room+1e-9){toast(room>0?`Only ${+room.toFixed(1)} marks are left to explain on this mock`:"Every lost mark on this mock is already explained");return}
     m.mistakes=(m.mistakes||[]).concat([{id:"x"+Date.now().toString(36),q:v("mxQ").trim(),cid:v("mxCh")||null,cat:v("mxCat"),lost,note:v("mxNote").trim()}]);save();render();toast("Mistake logged");return}
   if(f==="logForm"){const d=v("lDate"),h=parseFloat(v("lHrs"));if(!d||isNaN(h)||h<0){toast("Pick a date and enter hours");return}if(d>todayISO()){toast("Hours can't be logged for a future date");return}const capped=addHours(d,v("lPaper"),h,v("lMode"));save();render();toast(capped?"Saved, capped so the day stays within 24 hours":"Hours saved")}
-  if(f==="jForm"){const t=v("jT").trim();if(!t){toast("Enter the topic");return}const e={id:"j"+Date.now().toString(36),p:v("jP"),cid:v("jCh")||null,topic:t,kind:v("jK"),why:v("jW").trim(),created:todayISO(),box:0,due:iso(addDays(new Date(),1)),reviews:[],mastered:false,clicked:"",card:null};jPrefill={p:e.p,cid:""};jPut(e);jOpen=e.id;jFilter="active";render();toast("Added. First review tomorrow.");return}
+  if(f==="jForm"){const t=v("jT").trim();if(!t){toast("Enter the topic");return}const e=newTopic({p:v("jP"),cid:v("jCh")||null,topic:t,kind:v("jK"),why:v("jW").trim(),src:/Practice question/.test(v("jK"))?"practice":"manual"});jPrefill={p:e.p,cid:""};jPut(e);jOpen=e.id;jFilter="active";render();toast("Added. First review tomorrow.");return}
   if(f==="examForm"){const dd={};for(const p of PAPERS){const x=v("ex-"+p.id);if(!x){toast("Enter a date for "+p.short);return}dd[p.id]=x}
     const ds=Object.values(dd).sort();if(diffDays(parse(ds[0]),parse(ds[ds.length-1]))>31){toast("All papers should fall within one exam window (31 days)");return}
     S.settings.examDates=dd;save();
