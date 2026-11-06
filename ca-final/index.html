@@ -351,6 +351,8 @@ function load(o){o=JSON.parse(JSON.stringify(o||{}));const os=isObj(o.settings)?
   if(!isObj(x.settings.examDates))x.settings.examDates=freshState().settings.examDates;x.v=DATA_VERSION;return x}
 
 let dbRef=null, writing=false, dirty=false, lastSent="", saveTimer=null, retryN=0, retryT=null;
+let canWrite=null; /* null = not known yet, false = this person's access can't save to the account */
+const NO_ACCESS_MSG="Your access to this page lets you view it but not save to it, so your progress is kept on this phone only. Ask the page owner to share the page with you as an Editor, then reload.";
 /* ---- device storage: never fails silently ---- */
 const store={
   get(k,d){try{const v=localStorage.getItem(k);return v==null?d:JSON.parse(v)}catch(e){return d}},
@@ -384,17 +386,25 @@ function merge3(b,l,r,pl){if(same(l,r))return l;if(same(l,b))return r;if(same(r,
 function toMap(a){const o={};(a||[]).forEach(m=>{if(m&&m.id)o[m.id]=m});return o}
 function mergeState(b,l,r){const pl=(l.updatedAt||0)>=(r.updatedAt||0),prep=x=>x?Object.assign({},x,{mocks:toMap(x.mocks)}):{};
   const m=merge3(prep(b),prep(l),prep(r),pl);m.mocks=Object.values(isObj(m.mocks)?m.mocks:{}).sort((a,c)=>a.date<c.date?-1:1);m.updatedAt=Math.max(l.updatedAt||0,r.updatedAt||0);return load(m)}
+/* stop cloud saving for this visit; data stays on the device */
+function noWrite(msg){canWrite=false;dirty=false;clearTimeout(retryT);retryT=null;clearTimeout(saveTimer);dbRef=null;JR.col=null;ER.col=null;
+  setSync(false,"Saved on this device only");notice(msg||NO_ACCESS_MSG,"warn");if(view==="squad"||view==="today")render()}
 async function flush(){
-  if(!dbRef||writing||!dirty) return;
-  writing=true; dirty=false; let ok=false;
+  if(!dbRef||writing||!dirty||canWrite===false) return;
+  writing=true; dirty=false; let ok=false, s="";
   try{
     const cur=await dbRef.get();const cd=cur.exists&&cur.data();
     if(cd&&cd.s&&cd.s!==lastSent){const R=load(JSON.parse(cd.s));if(!base||!same(R,base)){S=mergeState(base||{},S,R);persistLocal();render()}}
-    const s=JSON.stringify(S);
+    s=JSON.stringify(S);
     if(s.length>200000)notice("Your saved data is nearing the cloud size limit. Clear old notes or contact the page owner.","warn");
     lastSent=s; await dbRef.set({s, t:S.updatedAt}); setBase(JSON.parse(s)); ok=true; retryN=0; clearTimeout(retryT); retryT=null;
     setSync(true,"Synced to your account"); pushBoard();
-  }catch(e){dirty=true;retryN++;const wait=[5,15,60,180][Math.min(retryN-1,3)];setSync(false,`Not synced yet, retrying in ${wait}s. Saved on this device.`);clearTimeout(retryT);retryT=setTimeout(()=>{retryT=null;flush()},wait*1000)}
+  }catch(e){const c=e&&e.code;writing=false;
+    if(c==="invalid_argument"&&s.length>250000){dirty=true;setSync(false,"Not synced: data too large");notice("Your saved data is larger than the cloud allows for one record, so new changes are kept on this device only. Delete old chapter notes or tasks, then they'll sync again.","bad");return}
+    if(c==="invalid_argument"){noWrite();return}
+    if(c==="quota_exceeded"){dirty=true;setSync(false,"Not synced: page storage full");notice("This page's shared storage is full, so new changes are kept on this device only. Tell the page owner.","bad");return}
+    if(c==="revoked"||c==="not_granted"||c==="capability_disabled"||c==="capability_removed"){noWrite("Saving to your account stopped because your access to this page changed. Your progress is kept on this device. Reload the page to try again.");return}
+    dirty=true;retryN++;const wait=(c==="resource_exhausted"?[30,60,180,300]:[5,15,60,180])[Math.min(retryN-1,3)];setSync(false,`Not synced yet, retrying in ${wait}s. Saved on this device.`);clearTimeout(retryT);retryT=setTimeout(()=>{retryT=null;flush()},wait*1000)}
   writing=false; if(ok&&dirty){clearTimeout(saveTimer);saveTimer=setTimeout(flush,400)}
 }
 window.addEventListener("online",()=>{if(dirty)flush()});
@@ -421,10 +431,13 @@ async function initSync(){
     const id=await user.id(); if(!id) return;
     myId=id; userNs=user;
     try{amOwner=await user.isOwner()}catch(e){}
-    initJournalSync(db,id,user);
-    initEvalSync(db,id);
+    try{const cw=await user.can("data.write");if(cw===false&&!amOwner)canWrite=false}catch(e){}
+    initJournalSync(db,id,user,canWrite!==false);
+    if(canWrite!==false)initEvalSync(db,id);
     examDoc=db.doc("shared/exam");
     examDoc.onSnapshot(sn=>{const d=sn.exists?sn.data():null;sharedExam=d&&isObj(d.dates)?{dates:Object.fromEntries(Object.entries(d.dates).filter(([k,v])=>GAP[k]!=null&&ISO_D.test(v)))}:null;render()},()=>{});
+    boardCol=db.collection("board");
+    if(canWrite===false){noWrite();watchBoard();return}
     dbRef=db.collection("data/users/"+id).doc("state");
     const snap=await dbRef.get();const R=snap.exists?remoteState(snap.data()):null;
     if(R){ if(!S.updatedAt){S=R}else{S=mergeState(base||{},S,R)} setBase(R);persistLocal(); if(!same(S,R)){dirty=true;flush()} render(); }
@@ -437,7 +450,11 @@ async function initSync(){
       if(!same(S,R2)){dirty=true;clearTimeout(saveTimer);saveTimer=setTimeout(flush,800)}
       render();
     },()=>setSync(false,"Offline, saved on this device"));
-    boardCol=db.collection("board");
+    watchBoard();
+    if(view==="squad")render();
+  }catch(e){ dbRef=null; setSync(false,"Saved on this device"); }
+}
+function watchBoard(){
     boardCol.onSnapshot(qs=>{
       board=qs.docs.map(d=>cleanBoard(d.id,d.data()));
       if(!boardReady){boardReady=true;const mine=board.find(b=>b.id===myId);
@@ -445,8 +462,6 @@ async function initSync(){
         pushBoard();}
       if(view==="squad"||view==="today")render();
     },()=>{});
-    if(view==="squad")render();
-  }catch(e){ dbRef=null; setSync(false,"Saved on this device"); }
 }
 
 function stable(o){if(o===null||typeof o!=="object")return JSON.stringify(o);return "{"+Object.keys(o).sort().map(k=>JSON.stringify(k)+":"+stable(o[k])).join(",")+"}"}
@@ -464,12 +479,12 @@ function summary(){const sh=S.settings.share||{},o={};
   return o}
 let boardBusy=false, boardAgain=false;
 async function pushBoard(){
-  if(!boardCol||!myId||!boardReady)return; if(boardBusy){boardAgain=true;return} boardBusy=true; boardAgain=false;
+  if(!boardCol||!myId||!boardReady||canWrite===false)return; if(boardBusy){boardAgain=true;return} boardBusy=true; boardAgain=false;
   try{
     if(!S.settings.onBoard){if(lastBoard!=="off"){await boardCol.doc(myId).delete();lastBoard="off"}}
     else{const sm=summary(),j=stable(sm);if(j!==lastBoard){await boardCol.doc(myId).set(Object.assign(sm,{t:Date.now()}));lastBoard=j}}
     boardErr="";
-  }catch(e){boardErr=(e&&e.code)||"error"}
+  }catch(e){boardErr=(e&&e.code)||"error";if(boardErr==="invalid_argument")boardErr="access"}
   boardBusy=false; if(boardAgain)pushBoard();
 }
 function refreshNames(ids){if(!userNs||!ids.length)return;userNs.profiles(ids).then(ps=>{let ch=false;ids.forEach(id=>{const n=(ps[id]&&ps[id].name)||"";if(names[id]!==n){names[id]=n;ch=true}});if(ch&&view==="squad")render()}).catch(()=>{})}
@@ -666,8 +681,8 @@ const JR=makeRecords({key:JK,list:()=>J,setList:a=>{J=a},toLocal:e=>e,
 function jSaveLocal(){JR.saveLocal()}
 function jPut(e){JR.put(e)}
 function jRemove(id){JR.remove(id)}
-function initJournalSync(db,id,user){
-  JR.attach(db.collection("data/users/"+id+"/state/journal"));
+function initJournalSync(db,id,user,attach){
+  if(attach)JR.attach(db.collection("data/users/"+id+"/state/journal"));
   claude.use("sample").then(s=>{sampleNs=s;if(s)s.limits().then(l=>{sampleLimits=l;if(view==="evaluate")render()}).catch(()=>{});if(view==="journal"||view==="evaluate")render()}).catch(()=>{});
 }
 function jDue(){const t=todayISO();return J.filter(e=>!e.mastered&&e.due<=t)}
@@ -1225,14 +1240,15 @@ V.squad=()=>{
   const nC=CHECKS["Courses, SPOM & articleship"].length, hid='<span class="muted" title="Not shared">–</span>';
   const invite=`<div class="card"><div class="label">Add friends to compete</div><div class="prose small">
     <p>1. Open this page on claude.ai and click <b>Share</b>.</p>
-    <p>2. Invite each friend by email and give them access that lets them <b>use</b> the page (Contributor). View-only friends can see the board but can't join it.</p>
+    <p>2. Invite each friend by email as an <b>Editor</b>. People outside your organization (friends on their own Claude accounts) can only save their progress as Editors; as Viewer, Commenter or even Contributor their changes stay on their phone and they can't join the board.</p>
+    <p class="muted">Two cautions: Editors can also change the page itself, so invite only people you trust. And keep link sharing off, because turning it on makes outside Editors view-only again.</p>
     <p>3. They open the link signed in to Claude, set their own hours, and start ticking. Everyone shares the exam schedule you set in Setup. They appear here automatically.</p>
     <p class="muted">Each person chooses what they share. Checklists, notes, tough topics and to-dos always stay private.</p></div></div>`;
   const sh=S.settings.share||{}, cl=S.settings.cols||{}, rb=S.settings.rankBy||"week";
   const opts=`<div class="grid g3">
     <div class="card"><div class="label">What I share</div><p class="small muted" style="margin:0">Only ticked items leave your account. Others see a dash for the rest.</p>
       <ul class="list small">${SHARE.map(([k,l])=>`<li><label><input type="checkbox" class="chk" data-act="share" data-k="${k}" ${sh[k]!==false?"checked":""}><span>${l}</span></label></li>`).join("")}</ul>
-      <label class="row small" style="gap:6px;border-top:1px solid var(--line);padding-top:8px"><input type="checkbox" class="chk" data-act="board" ${S.settings.onBoard?"checked":""}> Show me on the board at all</label></div>
+      <label class="row small" style="gap:6px;border-top:1px solid var(--line);padding-top:8px"><input type="checkbox" class="chk" data-act="board" ${S.settings.onBoard&&canWrite!==false?"checked":""} ${canWrite===false?"disabled":""}> Show me on the board at all</label></div>
     <div class="card"><div class="label">Columns I see</div><p class="small muted" style="margin:0">Changes only your view of the board.</p>
       <ul class="list small">${COLS.map(([k,l])=>`<li><label><input type="checkbox" class="chk" data-act="col" data-k="${k}" ${cl[k]!==false?"checked":""}><span>${l}</span></label></li>`).join("")}</ul></div>
     <div class="card"><div class="label">Rank the board by</div>
@@ -1246,8 +1262,9 @@ V.squad=()=>{
   const vis=COLS.filter(([k])=>cl[k]!==false);
   return `
   <div class="row between"><h2>Squad</h2><span class="small muted">Ranked by ${esc(RANKS[rb]).toLowerCase()}</span></div>
-  ${S.settings.onBoard?"":`<div class="notice"><span>You're not on the board. Tick "Show me on the board at all" below to join. Only the items you tick are shared.</span></div>`}
-  ${boardErr?`<div class="card"><p class="small" style="margin:0;color:var(--warn)">Your summary couldn't be posted (${esc(boardErr)}). Ask the page owner for Contributor access.</p></div>`:""}
+  ${S.settings.onBoard||canWrite===false?"":`<div class="notice"><span>You're not on the board. Tick "Show me on the board at all" below to join. Only the items you tick are shared.</span></div>`}
+  ${canWrite===false?`<div class="card hero"><div class="label">You can't join the board yet</div><p class="small" style="margin:0">Your access lets you see this page but not save to it, so you can't appear on the board and your progress stays on this phone.</p><p class="small" style="margin:0"><b>To fix it:</b> ask the page owner to open Share and change your access to <b>Editor</b>. Then reload this page and tick "Show me on the board". Everything you've done on this phone will sync to your account.</p></div>`
+    :boardErr?`<div class="card"><p class="small" style="margin:0;color:var(--warn)">${boardErr==="access"?"Your summary couldn't be posted because your access is view-only. Ask the page owner to make you an Editor, then reload.":"Your summary couldn't be posted ("+esc(boardErr)+"). It will try again with your next change."}</p></div>`:""}
   ${rows.length?`<div class="tablewrap"><table><tr><th class="c">#</th><th>Name</th>${vis.map(([k,l])=>`<th class="c">${l}</th>`).join("")}</tr>
     ${rows.map((r,i)=>`<tr><td class="c num">${i+1}</td><td>${esc(names[r.id]||"Someone")} ${r.id===myId?'<span class="chip A">you</span>':""}</td>${vis.map(([k])=>`<td class="c num">${C[k](r)}</td>`).join("")}</tr>`).join("")}
   </table></div>`
@@ -1502,7 +1519,7 @@ document.addEventListener("change",e=>{
   if(a==="jpaper"){const pid=b.value;jPrefill={p:pid,cid:""};const sel=document.getElementById("jCh");if(sel)sel.innerHTML='<option value="">General</option>'+CH[pid].map(c=>`<option value="${c[3]}">${esc(c[0].length>60?c[0].slice(0,58)+"…":c[0])}</option>`).join("");return}
   if(a==="jclick"){const e=J.find(x=>x.id===b.dataset.id);if(e){e.clicked=b.value;jPut(e)}return}
   if(a==="fill"){const dd=defaultDates(b.value);for(const k in dd){const el=document.getElementById("ex-"+k);if(el)el.value=dd[k]}return}
-  if(a==="board"){S.settings.onBoard=b.checked;save();pushBoard();render();return}
+  if(a==="board"){if(canWrite===false&&b.checked){b.checked=false;toast("Your access doesn't allow joining the board yet. See the note on this page.");return}S.settings.onBoard=b.checked;save();pushBoard();render();return}
   if(a==="share"){S.settings.share=Object.assign({},S.settings.share,{[b.dataset.k]:b.checked});save();pushBoard();render();return}
   if(a==="col"){S.settings.cols=Object.assign({},S.settings.cols,{[b.dataset.k]:b.checked});save();render();return}
   if(a==="check"){S.checks[b.dataset.k]=b.checked;save();render()}

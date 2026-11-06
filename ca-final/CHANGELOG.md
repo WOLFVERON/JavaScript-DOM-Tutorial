@@ -1,5 +1,18 @@
 # CA Final Rank Desk: changelog
 
+## Phase 1.1: view-only access handling
+
+- Cause of "Not synced yet, retrying" on friends' phones: people outside the owner's organization are
+  view-only on a shared page unless invited as Editor (even when invited as Contributor), and view-only
+  people can't save data, including their own. The app retried those refused saves forever.
+- The app now checks access on load (and treats a refused save the same way): it stops retrying, keeps
+  progress on the device, says so, and tells the person to ask for Editor access. Squad explains the fix
+  and disables "Show me on the board" until access allows it. Progress made meanwhile syncs once access is fixed.
+- Save errors are classified: refused (no retry), data too large, storage full, access changed, or
+  temporary (retry; slower backoff when rate-limited).
+- Squad invite instructions now say to invite friends as Editor, with the cautions that Editors can change
+  the page and that turning on link sharing makes outside Editors view-only.
+
 ## Phase 1: bug fixes, stability and data integrity (data version 2)
 
 Restore point for this upgrade: `archive/app-v1-pre-phase1.html` (and git history).

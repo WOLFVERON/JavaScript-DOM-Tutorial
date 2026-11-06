@@ -21,7 +21,7 @@ function runtime(opts) {
     const fireCol = (c, changes) => (colSubs[c] || []).forEach(f => { const docs = Object.keys(store).filter(k => colOf(k) === c).map(k => ({id: k.split('/').pop(), data: () => JSON.parse(JSON.stringify(store[k]))})); f({docs, size: docs.length, empty: !docs.length, docChanges: () => changes || docs.map(d => ({type: 'added', doc: d}))}) });
     const doc = p => ({id: p.split('/').pop(), path: p,
       get: async () => ({exists: !!store[p], data: () => store[p] && JSON.parse(JSON.stringify(store[p]))}),
-      set: async d => { if (window.__db.failSet > 0) { window.__db.failSet--; throw {code: 'unavailable'} } window.__db.sets++; store[p] = JSON.parse(JSON.stringify(d)); fireDoc(p); fireCol(colOf(p), [{type: 'modified', doc: {id: p.split('/').pop(), data: () => JSON.parse(JSON.stringify(store[p]))}}]) },
+      set: async d => { if (window.__db.failSet > 0) { window.__db.failSet--; throw {code: opts.failCode || 'unavailable'} } window.__db.sets++; store[p] = JSON.parse(JSON.stringify(d)); fireDoc(p); fireCol(colOf(p), [{type: 'modified', doc: {id: p.split('/').pop(), data: () => JSON.parse(JSON.stringify(store[p]))}}]) },
       update: async d => { if (!store[p]) throw {code: 'invalid_argument'}; store[p] = Object.assign({}, store[p], JSON.parse(JSON.stringify(d))); fireDoc(p) },
       delete: async () => { delete store[p]; fireDoc(p) },
       onSnapshot: f => { (docSubs[p] = docSubs[p] || []).push(f); setTimeout(() => fireDoc(p), 5); return () => {} }});
@@ -30,7 +30,7 @@ function runtime(opts) {
     sample.limits = async () => ({maxPromptBytes: 262144, images: {maxCount: 20, maxInputBytes: 5e6, mediaTypes: ['image/jpeg', 'image/png']}, modelTiers: ['default', 'quick']});
     sample.json = async (prompt, o) => { window.__tier = o.modelTier; return opts.evalResult };
     window.claude = {use: async n => n === 'db' ? {collection: c => ({doc: id => doc(c + '/' + id), onSnapshot: f => { (colSubs[c] = colSubs[c] || []).push(f); setTimeout(() => fireCol(c), 5); return () => {} }}), doc}
-      : n === 'user' ? {id: async () => 'u_me', isOwner: async () => true, profiles: async ids => Object.fromEntries(ids.map(i => [i, {name: i}]))}
+      : n === 'user' ? {id: async () => 'u_me', isOwner: async () => opts.owner !== false, can: async () => (opts.can === undefined ? null : opts.can), profiles: async ids => Object.fromEntries(ids.map(i => [i, {name: i}]))}
       : n === 'sample' ? sample : n === 'downloads' ? null : null};
   };
 }
@@ -272,6 +272,32 @@ const today = new Date(); const ymd = n => { const d = new Date(today); d.setDat
     }
     ok(`smoke ${vp.width}px: all tabs render with no errors`, !p.errs.length, p.errs);
     ok(`smoke ${vp.width}px: no sideways page scroll`, !over.length, over); await p.close();
+  }
+
+  /* 17. view-only friend (access known up front): no endless retries, clear guidance, board blocked */
+  {
+    const p = await open(b, {cloud: true, owner: false, can: false}, 'squad');
+    await p.evaluate(() => { S.checks.el1 = true; save() }); await p.waitForTimeout(1600);
+    const r = await p.evaluate(() => ({cw: canWrite, retry: !!retryT, sets: window.__db.sets, sync: document.getElementById('syncText').textContent, notice: document.getElementById('notice').textContent, card: document.body.textContent.includes("You can't join the board yet"), boxDisabled: document.querySelector('input[data-act="board"]').disabled, local: store.get(LS, {}).checks.el1}));
+    ok('view-only: detected before any save, nothing sent', r.cw === false && r.sets === 0 && !r.retry, r);
+    ok('view-only: says progress is kept on this phone and to ask for Editor access', /this phone/.test(r.notice) && /Editor/.test(r.notice) && /device only/.test(r.sync), r);
+    ok('view-only: squad explains the fix and the board box is disabled', r.card && r.boxDisabled, r);
+    ok('view-only: progress still saved on the device', r.local === true, r);
+    ok('view-only: no errors', !p.errs.length, p.errs); await p.close();
+  }
+  /* 18. access unknown up front, first save refused: stops retrying instead of looping */
+  {
+    const p = await open(b, {cloud: true, owner: false, failSet: 99, failCode: 'invalid_argument'}, 'squad');
+    await p.click('input[data-act="board"]'); await p.waitForTimeout(1800);
+    const r = await p.evaluate(() => ({cw: canWrite, retry: !!retryT, dirty, sync: document.getElementById('syncText').textContent, onBoardBox: document.querySelector('input[data-act="board"]').checked}));
+    ok('refused save: stops retrying and switches to device-only saving', r.cw === false && !r.retry && !r.dirty && /device only/.test(r.sync), r);
+    ok('refused save: board box shown unticked and disabled', r.onBoardBox === false, r); await p.close();
+  }
+  /* 19. temporary outage still retries */
+  {
+    const p = await open(b, {cloud: true, failSet: 1, failCode: 'unavailable'});
+    await p.evaluate(() => { S.checks.el2 = true; save() }); await p.waitForTimeout(1600);
+    ok('outage: temporary failure still schedules a retry', await p.evaluate(() => !!retryT && canWrite !== false)); await p.close();
   }
 
   await b.close();
