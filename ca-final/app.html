@@ -305,7 +305,7 @@ const GAP={fr:0,afm:2,audit:4,dt:6,idt:8,ibs:10};
 function defaultDates(first){const o={};for(const k in GAP)o[k]=iso(addDays(parse(first),GAP[k]));return o}
 function freshState(){
   return {v:1, updatedAt:0,
-    settings:{examDates:defaultDates("2027-05-01"), startDate:todayISO(), groups:"both", tWd:2.5, tWe:8, revDays:21, targetPct:75, onBoard:true},
+    settings:{examDates:defaultDates("2028-11-02"), startDate:todayISO(), groups:"both", tWd:2.5, tWe:8, revDays:21, targetPct:75, onBoard:true},
     ch:{}, log:{}, mocks:[], checks:{}, todos:{}};
 }
 let S = freshState();
@@ -367,7 +367,7 @@ async function initSync(){
 function stable(o){if(o===null||typeof o!=="object")return JSON.stringify(o);return "{"+Object.keys(o).sort().map(k=>JSON.stringify(k)+":"+stable(o[k])).join(",")+"}"}
 function summary(){const days={};for(let i=0;i<14;i++){const k=iso(addDays(new Date(),-i));const h=hoursOn(k);if(h)days[k]=Math.round(h*100)/100}
   const lat=activePapers().map(p=>{const m=S.mocks.filter(x=>x.paper===p.id).sort((a,b)=>a.date<b.date?-1:1);return m.length?m[m.length-1].score/m[m.length-1].max*100:null}).filter(x=>x!=null);
-  return {days,pct:Math.round(overall()*100),streak:streak(),mockAvg:lat.length?Math.round(lat.reduce((a,b)=>a+b,0)/lat.length):null,mocks:S.mocks.length,tWd:+S.settings.tWd,tWe:+S.settings.tWe}}
+  return {days,pct:Math.round(overall()*100),streak:streak(),mockAvg:lat.length?Math.round(lat.reduce((a,b)=>a+b,0)/lat.length):null,mocks:S.mocks.length,courses:CHECKS["Courses, SPOM & articleship"].filter(([k])=>S.checks[k]).length,tWd:+S.settings.tWd,tWe:+S.settings.tWe}}
 let boardBusy=false;
 async function pushBoard(){
   if(!boardCol||!myId||!boardReady||boardBusy)return; boardBusy=true;
@@ -524,7 +524,7 @@ V.plan=()=>{
   const ad=activeDates();ad.forEach((x,i)=>{const gap=i?diffDays(parse(ad[i-1].date),parse(x.date)):null;ms.push([parse(x.date),`<b>${esc(x.p.short)} exam</b>${gap!=null?` · ${gap-1} revision day${gap-1===1?"":"s"} before it`:" · first paper"}`])});
   return `
   <div class="row between"><h2>Your timeline</h2><span class="small muted num">${fmt(S.settings.startDate)} to ${fmt(examStart())} · ${total} days of prep</span></div>
-  ${(()=>{const H=Math.round(targetSum(plan.start,addDays(plan.exam,-1)));return `<div class="card hero"><div class="row" style="gap:24px"><div class="stat"><span class="label">Study hours in this plan</span><b>${H} h</b></div><div class="stat"><span class="label">Weekday / weekend</span><b>${S.settings.tWd} / ${S.settings.tWe} h</b></div></div>${H<1000?`<p class="small" style="margin:0"><span class="chip warn">Tight</span> Most rankers put in roughly 1,200–1,800 hours for both groups. Add hours on holidays and in the final 6 weeks (study leave), or move your attempt, to close the gap.</p>`:`<p class="small muted" style="margin:0">That's a solid budget. Protect it.</p>`}</div>`})()}
+  ${(()=>{const H=Math.round(targetSum(plan.start,addDays(plan.exam,-1)));return `<div class="card hero"><div class="row" style="gap:24px"><div class="stat"><span class="label">Total plan hours (from ${fmtShort(plan.start)})</span><b>${H} h</b></div><div class="stat"><span class="label">Hours left from today</span><b>${Math.round(hoursLeft())} h</b></div><div class="stat"><span class="label">Weekday / weekend</span><b>${S.settings.tWd} / ${S.settings.tWe} h</b></div></div>${H<1000?`<p class="small" style="margin:0"><span class="chip warn">Tight</span> Most rankers put in roughly 1,200–1,800 hours for both groups. Add hours on holidays and in the final 6 weeks (study leave), or move your attempt, to close the gap.</p>`:`<p class="small muted" style="margin:0">That's a solid budget. Protect it.</p>`}<p class="small muted" style="margin:0">Total counts every day from your plan start to the day before your first paper. Hours left counts only from today and subtracts what you've already logged today, so it shrinks each day.</p></div>`})()}
   <div class="card"><div class="gantt">${rows.join("")}</div><div class="legend">${activePapers().map(p=>`<span><span class="swatch" style="background:${col(p.id)}"></span>${p.short}</span>`).join("")}<span><span class="swatch" style="background:var(--bad)"></span>Today</span></div></div>
   <div class="grid g2">
     <div class="card"><div class="label">Phases</div>
@@ -667,15 +667,15 @@ V.squad=()=>{
     <p>1. Open this page on claude.ai and click <b>Share</b>.</p>
     <p>2. Invite each friend by email and give them access that lets them <b>use</b> the page (Contributor). View-only friends can see the board but can't join it.</p>
     <p>3. They open the link signed in to Claude, set their own hours, and start ticking. Everyone shares the exam schedule you set in Setup. They appear here automatically.</p>
-    <p class="muted">Only a summary is shared: hours for the last 14 days, streak, syllabus %, and mock average. Checklists, notes and to-dos stay private to each person.</p></div></div>`;
+    <p class="muted">Only a summary is shared: hours for the last 14 days, streak, syllabus %, mock average, and how many SPOM / course items are done. Checklists, notes and to-dos stay private to each person.</p></div></div>`;
   if(!boardCol) return `<h2>Squad</h2><div class="card"><p style="margin:0">The squad board needs the Claude-hosted version of this page, opened while signed in to Claude. In a plain browser copy, your progress stays on this device only.</p></div>${invite}`;
   const rows=squadRows(); refreshNames(rows.map(r=>r.id));
   const leader=rows[0];
   return `
   <div class="row between"><h2>Squad</h2><label class="row small" style="gap:6px"><input type="checkbox" class="chk" data-act="board" ${S.settings.onBoard?"checked":""}> Show me on the board</label></div>
   ${boardErr?`<div class="card"><p class="small" style="margin:0;color:var(--warn)">Your summary couldn't be posted (${esc(boardErr)}). Ask the page owner for Contributor access.</p></div>`:""}
-  ${rows.length?`<div class="tablewrap"><table><tr><th class="c">#</th><th>Name</th><th class="c">Today</th><th class="c">Last 7 days</th><th class="c">Of target</th><th class="c">Streak</th><th class="c">Syllabus</th><th class="c">Mock avg</th></tr>
-    ${rows.map((r,i)=>{const pc=r.tw?Math.round(r.wk/r.tw*100):0;return `<tr><td class="c num">${i+1}</td><td>${esc(names[r.id]||"Someone")} ${r.id===myId?'<span class="chip A">you</span>':""}</td><td class="c num">${r.today.toFixed(1)}h</td><td class="c num"><b>${r.wk.toFixed(1)}h</b></td><td class="c num" style="color:${pc>=100?"var(--good)":pc>=75?"inherit":"var(--warn)"}">${pc}%</td><td class="c num">${r.st}d</td><td class="c num">${r.pct}%</td><td class="c num">${r.mockAvg==null?"–":r.mockAvg+"%"}</td></tr>`}).join("")}
+  ${rows.length?`<div class="tablewrap"><table><tr><th class="c">#</th><th>Name</th><th class="c">Today</th><th class="c">Last 7 days</th><th class="c">Of target</th><th class="c">Streak</th><th class="c">Syllabus</th><th class="c">Mock avg</th><th class="c">SPOM & courses</th></tr>
+    ${rows.map((r,i)=>{const pc=r.tw?Math.round(r.wk/r.tw*100):0;return `<tr><td class="c num">${i+1}</td><td>${esc(names[r.id]||"Someone")} ${r.id===myId?'<span class="chip A">you</span>':""}</td><td class="c num">${r.today.toFixed(1)}h</td><td class="c num"><b>${r.wk.toFixed(1)}h</b></td><td class="c num" style="color:${pc>=100?"var(--good)":pc>=75?"inherit":"var(--warn)"}">${pc}%</td><td class="c num">${r.st}d</td><td class="c num">${r.pct}%</td><td class="c num">${r.mockAvg==null?"–":r.mockAvg+"%"}</td><td class="c num">${r.courses==null?"–":r.courses+"/"+CHECKS["Courses, SPOM & articleship"].length}</td></tr>`}).join("")}
   </table></div>
   <p class="small muted" style="margin:0">Ranked by hours in the last 7 days. "Of target" compares each person with their own weekday and weekend targets, so different schedules compete fairly.${leader&&leader.wk>0?" Leader this week: "+esc(names[leader.id]||"Someone")+".":""}</p>`
   :`<div class="card"><p class="muted" style="margin:0">Nobody is on the board yet. Log some hours and you'll appear here.</p></div>`}
@@ -683,11 +683,16 @@ V.squad=()=>{
 };
 
 const CHECKS = {
-  "Eligibility & registration":[
+  "Courses, SPOM & articleship":[
     ["el1","Articleship completed, or will be by the eligibility cut-off for this attempt"],
-    ["el2","Advanced ICITSS (IT + Management & Communication Skills) completed"],
-    ["el3","SPOM Set A (Corporate & Economic Laws) qualified"],
-    ["el4","SPOM Set B (Strategic Cost & Performance Management) qualified"],
+    ["el2","Advanced ICITSS: Advanced IT completed"],
+    ["el2b","Advanced ICITSS: Management & Communication Skills (MCS) completed"],
+    ["el3","SPOM Set A (Corporate & Economic Laws) qualified (needed before the Final exam)"],
+    ["el4","SPOM Set B (Strategic Cost & Performance Management) qualified (needed before the Final exam)"],
+    ["sp_c","SPOM Set C elective qualified (needed before membership)"],
+    ["sp_d","SPOM Set D elective qualified (needed before membership)"],
+  ],
+  "Eligibility & registration":[
     ["el5","Final registration valid for this attempt (revalidate if needed)"],
     ["el6","Exam form submitted, fee paid, acknowledgement saved"],
     ["el7","Exam centre and medium (English / Hindi) checked on the form"],
