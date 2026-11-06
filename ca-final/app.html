@@ -135,7 +135,7 @@ svg text{fill:var(--muted);font-family:var(--mono);font-size:10px}
     <div class="toprow">
       <div class="brand"><h1>CA Final Rank Desk</h1><span class="tag" id="examTag"></span></div>
       <div class="row" style="gap:16px">
-        <div class="count"><b id="daysLeft">–</b><span class="muted small">days to paper 1</span></div>
+        <div class="count"><b id="daysLeft">–</b><span class="muted small" id="daysLbl">days to paper 1</span></div>
         <span class="sync"><span class="dot" id="syncDot"></span><span id="syncText">Saved on this device</span></span>
       </div>
     </div>
@@ -301,16 +301,19 @@ function fmt(s){const d=typeof s==="string"?parse(s):s;return d.toLocaleDateStri
 function fmtShort(d){return d.toLocaleDateString("en-IN",{day:"numeric",month:"short"})}
 function esc(s){return String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
 
+const GAP={fr:0,afm:2,audit:4,dt:6,idt:8,ibs:10};
+function defaultDates(first){const o={};for(const k in GAP)o[k]=iso(addDays(parse(first),GAP[k]));return o}
 function freshState(){
   return {v:1, updatedAt:0,
-    settings:{examDate:"2027-05-01", startDate:todayISO(), groups:"both", tWd:2.5, tWe:8, revDays:21, targetPct:75, onBoard:true},
+    settings:{examDates:defaultDates("2027-05-01"), startDate:todayISO(), groups:"both", tWd:2.5, tWe:8, revDays:21, targetPct:75, onBoard:true},
     ch:{}, log:{}, mocks:[], checks:{}, todos:{}};
 }
 let S = freshState();
-function load(o){const f=freshState();const x=Object.assign(f,o);x.settings=Object.assign(freshState().settings,o.settings||{});return x}
+function load(o){const f=freshState();const x=Object.assign(f,o);const os=o.settings||{};x.settings=Object.assign(freshState().settings,os);if(!os.examDates&&os.examDate)x.settings.examDates=defaultDates(os.examDate);delete x.settings.examDate;return x}
 try{const raw=localStorage.getItem(LS); if(raw){S=load(JSON.parse(raw));}}catch(e){}
 
 let dbRef=null, writing=false, dirty=false, lastSent="", saveTimer=null;
+let sharedExam=null, examDoc=null, amOwner=false;
 let boardCol=null, myId=null, userNs=null, board=[], boardReady=false, lastBoard="", boardErr="", names={};
 function save(){
   S.updatedAt=Date.now();
@@ -334,6 +337,9 @@ async function initSync(){
     if(!db||!user) return;
     const id=await user.id(); if(!id) return;
     myId=id; userNs=user;
+    try{amOwner=await user.isOwner()}catch(e){}
+    examDoc=db.doc("shared/exam");
+    examDoc.onSnapshot(sn=>{const d=sn.exists?sn.data():null;sharedExam=d&&d.dates?d:null;render()},()=>{});
     dbRef=db.collection("data/users/"+id).doc("state");
     const snap=await dbRef.get();
     if(snap.exists){
@@ -361,7 +367,7 @@ async function initSync(){
 function stable(o){if(o===null||typeof o!=="object")return JSON.stringify(o);return "{"+Object.keys(o).sort().map(k=>JSON.stringify(k)+":"+stable(o[k])).join(",")+"}"}
 function summary(){const days={};for(let i=0;i<14;i++){const k=iso(addDays(new Date(),-i));const h=hoursOn(k);if(h)days[k]=Math.round(h*100)/100}
   const lat=activePapers().map(p=>{const m=S.mocks.filter(x=>x.paper===p.id).sort((a,b)=>a.date<b.date?-1:1);return m.length?m[m.length-1].score/m[m.length-1].max*100:null}).filter(x=>x!=null);
-  return {days,pct:Math.round(overall()*100),streak:streak(),mockAvg:lat.length?Math.round(lat.reduce((a,b)=>a+b,0)/lat.length):null,mocks:S.mocks.length,exam:S.settings.examDate,tWd:+S.settings.tWd,tWe:+S.settings.tWe}}
+  return {days,pct:Math.round(overall()*100),streak:streak(),mockAvg:lat.length?Math.round(lat.reduce((a,b)=>a+b,0)/lat.length):null,mocks:S.mocks.length,tWd:+S.settings.tWd,tWe:+S.settings.tWe}}
 let boardBusy=false;
 async function pushBoard(){
   if(!boardCol||!myId||!boardReady||boardBusy)return; boardBusy=true;
@@ -395,10 +401,15 @@ function paperProgress(pid){const list=CH[pid];return list.reduce((a,_,i)=>a+chP
 function overall(){const ps=activePapers();return ps.reduce((a,p)=>a+paperProgress(p.id),0)/ps.length}
 function hoursOn(day){const l=S.log[day]||{};return Object.values(l).reduce((a,b)=>a+(+b||0),0)}
 function streak(){let n=0,d=new Date();if(hoursOn(iso(d))===0)d=addDays(d,-1);while(hoursOn(iso(d))>0){n++;d=addDays(d,-1)}return n}
+function examDates(){return Object.assign({},S.settings.examDates,(sharedExam&&sharedExam.dates)||{})}
+function activeDates(){const d=examDates();return activePapers().map(p=>({p,date:d[p.id]})).filter(x=>x.date).sort((a,b)=>a.date<b.date?-1:1)}
+function examStart(){const a=activeDates();return a.length?a[0].date:todayISO()}
+function examEnd(){const a=activeDates();return a.length?a[a.length-1].date:todayISO()}
+function nextPaper(){const t=todayISO();return activeDates().find(x=>x.date>=t)||null}
 function isWeekend(d){const g=d.getDay();return g===0||g===6}
 function dayTarget(d){return +(isWeekend(d)?S.settings.tWe:S.settings.tWd)||0}
 function targetSum(from,to){let a=0;for(let d=new Date(from);d<=to;d=addDays(d,1))a+=dayTarget(d);return a}
-function hoursLeft(){const e=addDays(parse(S.settings.examDate),-1),t=parse(todayISO());const done=hoursOn(todayISO());return Math.max(0,targetSum(t,e)-Math.min(done,dayTarget(t)))}
+function hoursLeft(){const e=addDays(parse(examStart()),-1),t=parse(todayISO());const done=hoursOn(todayISO());return Math.max(0,targetSum(t,e)-Math.min(done,dayTarget(t)))}
 function expectedPct(plan){const t=parse(todayISO());const base={1:[0,.55],2:[.55,.2],3:[.75,.15],4:[.9,.1]};for(const ph of plan.phases){if(t>=ph.start&&t<ph.end){const n=+ph.name.match(/Phase (\d)/)[1];const f=diffDays(ph.start,t)/Math.max(1,diffDays(ph.start,ph.end));const [b,w]=base[n];return b+w*f}}return t>=plan.exam?1:0}
 function weekHrs(days,ref){let a=0;for(let i=0;i<7;i++)a+=+(days[iso(addDays(ref,-i))]||0);return a}
 function paperOf(id){return PAPERS.find(p=>p.id===id)}
@@ -406,7 +417,7 @@ function col(p){return `var(${paperOf(p).color})`}
 
 /* Timeline generator */
 function buildPlan(){
-  const st=S.settings, start=parse(st.startDate), exam=parse(st.examDate);
+  const st=S.settings, start=parse(st.startDate), exam=parse(examStart());
   const D=Math.max(diffDays(start,exam),1), ps=activePapers().map(p=>p.id);
   const phases=[]; let cur=start;
   const push=(name,days,desc,blocks)=>{if(days<=0)return;const end=addDays(cur,days);phases.push({name,start:cur,end,desc,blocks:blocks(cur,days)});cur=end};
@@ -432,7 +443,7 @@ V.today=()=>{
   const due=[];activePapers().forEach(p=>CH[p.id].forEach((c,i)=>{const s=chState(p.id,i);if(s.r&&s.last&&diffDays(parse(s.last),new Date())>=+S.settings.revDays)due.push({p,c,i,s,age:diffDays(parse(s.last),new Date())});else if(s.r&&s.conf&&s.conf<=2)due.push({p,c,i,s,age:s.last?diffDays(parse(s.last),new Date()):0,weak:true})}));
   due.sort((a,b)=>b.age-a.age);
   const todos=S.todos[t]||[];
-  const daysLeft=diffDays(new Date(),parse(S.settings.examDate));
+  const daysLeft=diffDays(new Date(),parse(examStart()));
   return `
   <div class="grid g2">
     <div class="card hero">
@@ -445,6 +456,7 @@ V.today=()=>{
         <div class="stat"><span class="label">Study hours left</span><b>${Math.round(hoursLeft())}</b></div>
       </div>
       ${(()=>{if(daysLeft<0)return"";const exp=expectedPct(plan),act=overall(),gap=Math.round((exp-act)*100);return gap<=2?`<div class="row"><span class="chip A">On track</span><span class="small muted">Plan expects ${Math.round(exp*100)}% by today. You're at ${Math.round(act*100)}%.</span></div>`:`<div class="row"><span class="chip ${gap>10?"bad":"warn"}">${gap}% behind plan</span><span class="small muted">Plan expects ${Math.round(exp*100)}% by today. Tick chapters in Syllabus as you finish them.</span></div>`})()}
+      <div class="row small">${activeDates().map(x=>{const d=diffDays(new Date(),parse(x.date));return `<span class="chip" title="${fmt(x.date)}"><span class="swatch" style="background:${col(x.p.id)}"></span>${x.p.short} · ${fmtShort(parse(x.date))}${d>=0?` · ${d}d`:" · done"}</span>`}).join("")}</div>
       ${myRankChip()}
     </div>
     <div class="card">
@@ -508,10 +520,10 @@ V.plan=()=>{
     [addDays(E,-35),"MTP Series II usually released. Second full mock round."],
     [addDays(E,-21),"Final revision starts. No new topics from here."],
     [addDays(E,-14),"Admit card usually available. Download it and check your photo, signature and centre."],
-    [E,"Paper 1 (exam day). Group I and Group II run on alternate days, with gaps for revision."],
   ];
+  const ad=activeDates();ad.forEach((x,i)=>{const gap=i?diffDays(parse(ad[i-1].date),parse(x.date)):null;ms.push([parse(x.date),`<b>${esc(x.p.short)} exam</b>${gap!=null?` · ${gap-1} revision day${gap-1===1?"":"s"} before it`:" · first paper"}`])});
   return `
-  <div class="row between"><h2>Your timeline</h2><span class="small muted num">${fmt(S.settings.startDate)} to ${fmt(S.settings.examDate)} · ${total} days</span></div>
+  <div class="row between"><h2>Your timeline</h2><span class="small muted num">${fmt(S.settings.startDate)} to ${fmt(examStart())} · ${total} days of prep</span></div>
   ${(()=>{const H=Math.round(targetSum(plan.start,addDays(plan.exam,-1)));return `<div class="card hero"><div class="row" style="gap:24px"><div class="stat"><span class="label">Study hours in this plan</span><b>${H} h</b></div><div class="stat"><span class="label">Weekday / weekend</span><b>${S.settings.tWd} / ${S.settings.tWe} h</b></div></div>${H<1000?`<p class="small" style="margin:0"><span class="chip warn">Tight</span> Most rankers put in roughly 1,200–1,800 hours for both groups. Add hours on holidays and in the final 6 weeks (study leave), or move your attempt, to close the gap.</p>`:`<p class="small muted" style="margin:0">That's a solid budget. Protect it.</p>`}</div>`})()}
   <div class="card"><div class="gantt">${rows.join("")}</div><div class="legend">${activePapers().map(p=>`<span><span class="swatch" style="background:${col(p.id)}"></span>${p.short}</span>`).join("")}<span><span class="swatch" style="background:var(--bad)"></span>Today</span></div></div>
   <div class="grid g2">
@@ -520,7 +532,7 @@ V.plan=()=>{
     </div>
     <div class="card"><div class="label">Key milestones (estimated)</div>
       <div class="tablewrap"><table>${ms.map(([d,txt])=>`<tr><td class="num small" style="white-space:nowrap">${fmtShort(d)}</td><td class="small">${txt} ${d<t?'<span class="chip">past</span>':""}</td></tr>`).join("")}</table></div>
-      <p class="small muted" style="margin:0">Dates are estimated from your exam date using ICAI's usual pattern. Confirm the real dates on icai.org and in BoS announcements.</p>
+      <p class="small muted" style="margin:0">Pre-exam dates are estimated from your first paper using ICAI's usual pattern. Confirm the real dates on icai.org and in BoS announcements.</p>
     </div>
   </div>`;
 };
@@ -654,16 +666,16 @@ V.squad=()=>{
   const invite=`<div class="card"><div class="label">Add friends to compete</div><div class="prose small">
     <p>1. Open this page on claude.ai and click <b>Share</b>.</p>
     <p>2. Invite each friend by email and give them access that lets them <b>use</b> the page (Contributor). View-only friends can see the board but can't join it.</p>
-    <p>3. They open the link signed in to Claude, set their own exam date and hours, and start ticking. They appear here automatically.</p>
-    <p class="muted">Only a summary is shared: hours for the last 14 days, streak, syllabus %, mock average and exam date. Checklists, notes and to-dos stay private to each person.</p></div></div>`;
+    <p>3. They open the link signed in to Claude, set their own hours, and start ticking. Everyone shares the exam schedule you set in Setup. They appear here automatically.</p>
+    <p class="muted">Only a summary is shared: hours for the last 14 days, streak, syllabus %, and mock average. Checklists, notes and to-dos stay private to each person.</p></div></div>`;
   if(!boardCol) return `<h2>Squad</h2><div class="card"><p style="margin:0">The squad board needs the Claude-hosted version of this page, opened while signed in to Claude. In a plain browser copy, your progress stays on this device only.</p></div>${invite}`;
   const rows=squadRows(); refreshNames(rows.map(r=>r.id));
   const leader=rows[0];
   return `
   <div class="row between"><h2>Squad</h2><label class="row small" style="gap:6px"><input type="checkbox" class="chk" data-act="board" ${S.settings.onBoard?"checked":""}> Show me on the board</label></div>
   ${boardErr?`<div class="card"><p class="small" style="margin:0;color:var(--warn)">Your summary couldn't be posted (${esc(boardErr)}). Ask the page owner for Contributor access.</p></div>`:""}
-  ${rows.length?`<div class="tablewrap"><table><tr><th class="c">#</th><th>Name</th><th class="c">Today</th><th class="c">Last 7 days</th><th class="c">Of target</th><th class="c">Streak</th><th class="c">Syllabus</th><th class="c">Mock avg</th><th>Exam</th></tr>
-    ${rows.map((r,i)=>{const pc=r.tw?Math.round(r.wk/r.tw*100):0;return `<tr><td class="c num">${i+1}</td><td>${esc(names[r.id]||"Someone")} ${r.id===myId?'<span class="chip A">you</span>':""}</td><td class="c num">${r.today.toFixed(1)}h</td><td class="c num"><b>${r.wk.toFixed(1)}h</b></td><td class="c num" style="color:${pc>=100?"var(--good)":pc>=75?"inherit":"var(--warn)"}">${pc}%</td><td class="c num">${r.st}d</td><td class="c num">${r.pct}%</td><td class="c num">${r.mockAvg==null?"–":r.mockAvg+"%"}</td><td class="small num">${r.exam?fmtShort(parse(r.exam)):"–"}</td></tr>`}).join("")}
+  ${rows.length?`<div class="tablewrap"><table><tr><th class="c">#</th><th>Name</th><th class="c">Today</th><th class="c">Last 7 days</th><th class="c">Of target</th><th class="c">Streak</th><th class="c">Syllabus</th><th class="c">Mock avg</th></tr>
+    ${rows.map((r,i)=>{const pc=r.tw?Math.round(r.wk/r.tw*100):0;return `<tr><td class="c num">${i+1}</td><td>${esc(names[r.id]||"Someone")} ${r.id===myId?'<span class="chip A">you</span>':""}</td><td class="c num">${r.today.toFixed(1)}h</td><td class="c num"><b>${r.wk.toFixed(1)}h</b></td><td class="c num" style="color:${pc>=100?"var(--good)":pc>=75?"inherit":"var(--warn)"}">${pc}%</td><td class="c num">${r.st}d</td><td class="c num">${r.pct}%</td><td class="c num">${r.mockAvg==null?"–":r.mockAvg+"%"}</td></tr>`}).join("")}
   </table></div>
   <p class="small muted" style="margin:0">Ranked by hours in the last 7 days. "Of target" compares each person with their own weekday and weekend targets, so different schedules compete fairly.${leader&&leader.wk>0?" Leader this week: "+esc(names[leader.id]||"Someone")+".":""}</p>`
   :`<div class="card"><p class="muted" style="margin:0">Nobody is on the board yet. Log some hours and you'll appear here.</p></div>`}
@@ -712,12 +724,23 @@ V.checklists=()=>`
   <div class="grid g2">${Object.entries(CHECKS).map(([title,items])=>{const done=items.filter(([k])=>S.checks[k]).length;return `<div class="card"><div class="row between"><h3>${esc(title)}</h3><span class="chip ${done===items.length?"A":""}">${done}/${items.length}</span></div><ul class="list">${items.map(([k,t])=>`<li class="${S.checks[k]?"done":""}"><label><input type="checkbox" class="chk" data-act="check" data-k="${k}" ${S.checks[k]?"checked":""}><span>${esc(t)}</span></label></li>`).join("")}</ul></div>`}).join("")}</div>`;
 
 let confirmReset=false;
+function examCard(){
+  const locked=!!sharedExam&&!amOwner, d=examDates();
+  const note=!examDoc?"These dates drive your countdown and timeline."
+    :amOwner?"You set these dates for everyone on this page. Friends see the same schedule."
+    :locked?"Set by the page owner for everyone. Ask them to change it.":"No shared schedule yet, so these dates apply only to you.";
+  return `<div class="card"><div class="label">Exam schedule · one date per paper</div>
+    <form id="examForm" class="grid" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px">
+      ${PAPERS.map(p=>`<label class="f"><span class="row" style="gap:6px"><span class="swatch" style="background:${col(p.id)}"></span>${esc(p.short)}</span><input type="date" id="ex-${p.id}" value="${d[p.id]||""}" ${locked?"disabled":""}></label>`).join("")}
+      <label class="f">Fill from first paper<input type="date" id="exFill" data-act="fill" ${locked?"disabled":""}></label>
+      ${locked?"":`<button class="primary" style="grid-column:1/-1">Save exam schedule</button>`}
+    </form>
+    <p class="small muted" style="margin:0">${note} "Fill from first paper" sets the usual ICAI pattern: Group I and Group II papers on alternate days. Adjust each date to the official timetable on icai.org. CA Final is held in January, May and September.</p></div>`}
 V.setup=()=>`
   <h2>Setup</h2>
   <div class="grid g2">
     <div class="card"><div class="label">Your attempt</div>
       <form id="setForm" class="grid" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px">
-        <label class="f">Paper 1 exam date<input type="date" id="sExam" value="${S.settings.examDate}"></label>
         <label class="f">Plan start date<input type="date" id="sStart" value="${S.settings.startDate}"></label>
         <label class="f">Groups<select id="sGroups"><option value="both" ${S.settings.groups==="both"?"selected":""}>Both groups</option><option value="1" ${S.settings.groups==="1"?"selected":""}>Group I only</option><option value="2" ${S.settings.groups==="2"?"selected":""}>Group II only</option></select></label>
         <label class="f">Weekday hours (Mon–Fri)<input type="number" id="sWd" min="0" max="16" step="0.5" value="${S.settings.tWd}"></label>
@@ -726,8 +749,8 @@ V.setup=()=>`
         <label class="f">Target % per paper<input type="number" id="sPct" min="40" max="100" value="${S.settings.targetPct}"></label>
         <button class="primary" style="grid-column:1/-1">Save settings</button>
       </form>
-      <p class="small muted" style="margin:0">CA Final is held three times a year (January, May, September). Enter the date of your first paper once ICAI publishes the schedule.</p>
     </div>
+    ${examCard()}
     <div class="card"><div class="label">Backup</div>
       <p class="small" style="margin:0">Your progress syncs to your account when you open this page signed in to Claude, and is also kept on this device. Copy a backup now and then.</p>
       <div class="row"><button id="copyBk">Copy backup</button></div>
@@ -741,9 +764,9 @@ V.setup=()=>`
 let view="today";
 function render(){
   const tag=document.getElementById("examTag");
-  const dl=diffDays(new Date(),parse(S.settings.examDate));
-  document.getElementById("daysLeft").textContent=dl>=0?dl:"0";
-  tag.textContent=`Exam ${fmt(S.settings.examDate)} · ${S.settings.groups==="both"?"both groups":"Group "+(S.settings.groups==="1"?"I":"II")}`;
+  const np=nextPaper(),dl=np?diffDays(new Date(),parse(np.date)):0;
+  document.getElementById("daysLeft").textContent=dl>=0?dl:"0";document.getElementById("daysLbl").textContent=np?"days to "+np.p.short:"exams done";
+  tag.textContent=`Exams ${fmtShort(parse(examStart()))} – ${fmt(examEnd())} · ${S.settings.groups==="both"?"both groups":"Group "+(S.settings.groups==="1"?"I":"II")}`;
   document.querySelectorAll("#tabs a").forEach(a=>a.classList.toggle("on",a.dataset.v===view));
   const active=document.activeElement, aid=active&&active.id, pos=active&&active.selectionStart;
   document.getElementById("main").innerHTML=`<section class="view">${V[view]()}</section>`;
@@ -779,6 +802,7 @@ document.addEventListener("change",e=>{
   const b=e.target.closest("[data-act]");if(!b)return;const a=b.dataset.act;
   if(a==="stage"){const k=b.dataset.k;S.ch[k]=Object.assign({},S.ch[k],{[b.dataset.s]:b.checked});touch(k);save();render()}
   if(a==="todo"){S.todos[todayISO()][+b.dataset.i].done=b.checked;save();render()}
+  if(a==="fill"){const dd=defaultDates(b.value);for(const k in dd){const el=document.getElementById("ex-"+k);if(el)el.value=dd[k]}return}
   if(a==="board"){S.settings.onBoard=b.checked;save();pushBoard();render();return}
   if(a==="check"){S.checks[b.dataset.k]=b.checked;save();render()}
   if(a==="note"){const k=b.dataset.k;S.ch[k]=Object.assign({},S.ch[k],{note:b.value});save()}
@@ -788,7 +812,11 @@ document.addEventListener("submit",e=>{
   if(f==="todoForm"){const t=v("todoIn").trim();if(!t)return;const d=todayISO();(S.todos[d]=S.todos[d]||[]).push({t,done:false});save();render();document.getElementById("todoIn").focus()}
   if(f==="mockForm"){const sc=parseFloat(v("mScore")),mx=parseFloat(v("mMax"))||100;if(isNaN(sc)||sc<0||sc>mx){toast("Enter marks between 0 and "+mx);return}mockForm.paper=v("mPaper");S.mocks.push({id:Date.now().toString(36),paper:v("mPaper"),date:v("mDate")||todayISO(),score:sc,max:mx,src:v("mSrc").trim()});save();render();toast("Score saved")}
   if(f==="logForm"){const d=v("lDate"),h=parseFloat(v("lHrs"));if(!d||isNaN(h)){toast("Pick a date and enter hours");return}S.log[d]=S.log[d]||{};S.log[d][v("lPaper")]=h;save();render();toast("Hours updated")}
-  if(f==="setForm"){const ex=v("sExam"),st=v("sStart");if(!ex||!st||st>=ex){toast("Start date must be before the exam date");return}Object.assign(S.settings,{examDate:ex,startDate:st,groups:v("sGroups"),tWd:+v("sWd")||0,tWe:+v("sWe")||0,revDays:+v("sRev")||21,targetPct:+v("sPct")||75});save();render();toast("Settings saved")}
+  if(f==="examForm"){const dd={};for(const p of PAPERS){const x=v("ex-"+p.id);if(!x){toast("Enter a date for "+p.short);return}dd[p.id]=x}
+    S.settings.examDates=dd;save();
+    if(examDoc&&amOwner){examDoc.set({dates:dd,t:Date.now()}).then(()=>toast("Exam schedule saved for everyone"),()=>toast("Saved for you only. Shared save failed."))}else toast("Exam schedule saved");
+    render();return}
+  if(f==="setForm"){const st=v("sStart"),ex=examStart();if(!st||st>=ex){toast("Start date must be before your first paper ("+fmt(ex)+")");return}Object.assign(S.settings,{startDate:st,groups:v("sGroups"),tWd:+v("sWd")||0,tWe:+v("sWe")||0,revDays:+v("sRev")||21,targetPct:+v("sPct")||75});save();render();toast("Settings saved")}
 });
 
 route();
