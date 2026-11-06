@@ -133,6 +133,16 @@ svg text{fill:var(--muted);font-family:var(--mono);font-size:10px}
 .legend span{display:inline-flex;align-items:center;gap:5px}
 @media (max-width:560px){.paperline{grid-template-columns:4.5rem 1fr 2.8rem}.grow{grid-template-columns:5.5rem 1fr}.count b{font-size:1.25rem}}
 html{overflow-x:hidden}
+.road{position:relative;height:18px;background:var(--sunk);border-radius:99px;overflow:visible}
+.road .time{position:absolute;inset:0 auto 0 0;border-radius:99px;background:repeating-linear-gradient(135deg,var(--line) 0 6px,transparent 6px 12px)}
+.road .done{position:absolute;inset:0 auto 0 0;border-radius:99px;background:var(--accent);transition:width .8s cubic-bezier(.2,.8,.2,1)}
+.road .planm{position:absolute;top:-5px;bottom:-5px;width:2px;background:var(--fg);opacity:.55}
+.road .you{position:absolute;top:50%;width:22px;height:22px;margin-left:-11px;transform:translateY(-50%);border-radius:50%;background:var(--surface);border:3px solid var(--accent);box-shadow:0 1px 4px rgba(0,0,0,.18)}
+.dots{display:grid;grid-template-columns:repeat(28,1fr);gap:3px}
+.dots i{aspect-ratio:1;border-radius:3px;background:var(--h0);display:block;max-width:100%}
+.dots i.part{background:var(--h2)}.dots i.full{background:var(--h4)}.dots i.fut{opacity:.35}
+.ms{display:grid;grid-template-columns:1fr 3.5rem;gap:4px 10px;align-items:center}
+.lvl{display:inline-grid;place-items:center;min-width:2.2rem;height:2.2rem;padding:0 6px;border-radius:10px;background:var(--accent);color:var(--accent-fg);font-family:var(--mono);font-weight:500}
 main{touch-action:pan-y pinch-zoom;will-change:transform}
 nav.tabs{position:relative}
 #tabInk{position:absolute;bottom:0;left:0;height:2px;width:0;background:var(--accent);border-radius:2px;transition:transform .32s cubic-bezier(.2,.85,.25,1),width .32s cubic-bezier(.2,.85,.25,1);pointer-events:none}
@@ -317,7 +327,7 @@ const GAP={fr:0,afm:2,audit:4,dt:6,idt:8,ibs:10};
 function defaultDates(first){const o={};for(const k in GAP)o[k]=iso(addDays(parse(first),GAP[k]));return o}
 function freshState(){
   return {v:1, updatedAt:0,
-    settings:{examDates:defaultDates("2028-11-02"), startDate:todayISO(), groups:"both", tWd:2.5, tWe:8, revDays:21, targetPct:75, onBoard:true},
+    settings:{examDates:defaultDates("2028-11-02"), startDate:todayISO(), groups:"both", tWd:2.5, tWe:8, revDays:21, targetPct:75, onBoard:true, share:{hours:true,streak:true,syllabus:true,mocks:true,courses:true,total:true,level:true}, cols:{today:true,week:true,target:true,streak:true,syllabus:true,mocks:true,courses:true,total:true,level:true}, rankBy:"week"},
     ch:{}, log:{}, mocks:[], checks:{}, todos:{}};
 }
 let S = freshState();
@@ -379,9 +389,18 @@ async function initSync(){
 }
 
 function stable(o){if(o===null||typeof o!=="object")return JSON.stringify(o);return "{"+Object.keys(o).sort().map(k=>JSON.stringify(k)+":"+stable(o[k])).join(",")+"}"}
-function summary(){const days={};for(let i=0;i<14;i++){const k=iso(addDays(new Date(),-i));const h=hoursOn(k);if(h)days[k]=Math.round(h*100)/100}
-  const lat=activePapers().map(p=>{const m=S.mocks.filter(x=>x.paper===p.id).sort((a,b)=>a.date<b.date?-1:1);return m.length?m[m.length-1].score/m[m.length-1].max*100:null}).filter(x=>x!=null);
-  return {days,pct:Math.round(overall()*100),streak:streak(),mockAvg:lat.length?Math.round(lat.reduce((a,b)=>a+b,0)/lat.length):null,mocks:S.mocks.length,courses:CHECKS["Courses, SPOM & articleship"].filter(([k])=>S.checks[k]).length,tWd:+S.settings.tWd,tWe:+S.settings.tWe}}
+function totalHours(){return Object.keys(S.log).reduce((a,k)=>a+hoursOn(k),0)}
+function bestStreak(){const ks=Object.keys(S.log).filter(k=>hoursOn(k)>0).sort();let best=0,cur=0,prev=null;ks.forEach(k=>{cur=(prev&&diffDays(parse(prev),parse(k))===1)?cur+1:1;best=Math.max(best,cur);prev=k});return best}
+function lastStudyDay(){const ks=Object.keys(S.log).filter(k=>hoursOn(k)>0).sort();return ks.length?ks[ks.length-1]:null}
+function summary(){const sh=S.settings.share||{},o={};
+  if(sh.hours!==false){const days={};for(let i=0;i<14;i++){const k=iso(addDays(new Date(),-i));const h=hoursOn(k);if(h)days[k]=Math.round(h*100)/100}o.days=days;o.tWd=+S.settings.tWd;o.tWe=+S.settings.tWe}
+  if(sh.streak!==false){o.streak=streak();o.best=bestStreak();o.sday=lastStudyDay()}
+  if(sh.syllabus!==false)o.pct=Math.round(overall()*100);
+  if(sh.mocks!==false){const lat=activePapers().map(p=>{const m=S.mocks.filter(x=>x.paper===p.id).sort((a,b)=>a.date<b.date?-1:1);return m.length?m[m.length-1].score/m[m.length-1].max*100:null}).filter(x=>x!=null);o.mockAvg=lat.length?Math.round(lat.reduce((a,b)=>a+b,0)/lat.length):null;o.mocks=S.mocks.length}
+  if(sh.courses!==false)o.courses=CHECKS["Courses, SPOM & articleship"].filter(([k])=>S.checks[k]).length;
+  if(sh.total!==false)o.tot=Math.round(totalHours()*10)/10;
+  if(sh.level!==false)o.lvl=badges().filter(b=>b.got).length;
+  return o}
 let boardBusy=false;
 async function pushBoard(){
   if(!boardCol||!myId||!boardReady||boardBusy)return; boardBusy=true;
@@ -393,10 +412,56 @@ async function pushBoard(){
   boardBusy=false;
 }
 function refreshNames(ids){if(!userNs||!ids.length)return;userNs.profiles(ids).then(ps=>{let ch=false;ids.forEach(id=>{const n=(ps[id]&&ps[id].name)||"";if(names[id]!==n){names[id]=n;ch=true}});if(ch&&view==="squad")render()}).catch(()=>{})}
-function squadRows(){const now=new Date(),t=todayISO(),y=iso(addDays(now,-1));
-  return board.map(b=>{const days=b.days||{};let tw=0;for(let i=0;i<7;i++){const d=addDays(now,-i);tw+=(d.getDay()===0||d.getDay()===6)?(+b.tWe||0):(+b.tWd||0)}
-    const wk=weekHrs(days,now);return Object.assign({},b,{wk,tw,today:+(days[t]||0),st:(days[t]||days[y])?(b.streak||0):0})}).sort((a,b)=>b.wk-a.wk||b.pct-a.pct)}
-function myRankChip(){if(!boardCol||board.length<2)return "";const r=squadRows(),i=r.findIndex(x=>x.id===myId);if(i<0)return "";return `<div class="row"><span class="chip A">Squad #${i+1} of ${r.length} this week</span><a href="#squad" class="small" style="color:var(--accent)">See the board</a></div>`}
+const RANKS={week:"Last 7 days",target:"% of weekly target",streak:"Current streak",syllabus:"Syllabus %",total:"Total hours",level:"Level"};
+function squadRows(){const now=new Date(),t=todayISO(),y=iso(addDays(now,-1)),rb=S.settings.rankBy||"week";
+  const rows=board.map(b=>{const r=Object.assign({},b);
+    if(b.days){const days=b.days;let tw=0;for(let i=0;i<7;i++){const d=addDays(now,-i);tw+=(d.getDay()===0||d.getDay()===6)?(+b.tWe||0):(+b.tWd||0)}r.wk=weekHrs(days,now);r.tw=tw;r.today=+(days[t]||0);r.tp=tw?Math.round(r.wk/tw*100):0}
+    if(b.streak!=null){const sd=b.sday||(b.days&&(b.days[t]?t:b.days[y]?y:null));r.st=(sd===t||sd===y)?(b.streak||0):0}
+    return r});
+  const key={week:r=>r.wk,target:r=>r.tp,streak:r=>r.st,syllabus:r=>r.pct,total:r=>r.tot,level:r=>r.lvl}[rb]||(r=>r.wk);
+  const v=r=>{const x=key(r);return x==null?-1:x};
+  return rows.sort((a,b)=>v(b)-v(a)||(b.wk||0)-(a.wk||0))}
+function myRankChip(){if(!boardCol||board.length<2)return "";const r=squadRows(),i=r.findIndex(x=>x.id===myId);if(i<0)return "";return `<div class="row"><span class="chip A">Squad #${i+1} of ${r.length} · ${esc(RANKS[S.settings.rankBy||"week"])}</span><a href="#squad" class="small" style="color:var(--accent)">See the board</a></div>`}
+/* milestones & journey */
+function badges(){const bs=bestStreak(),th=totalHours(),ov=overall()*100,out=[];
+  [3,7,14,30,60,100].forEach(n=>out.push({g:"Consistency",t:`${n}-day streak`,got:bs>=n,left:`${n-bs} more day${n-bs===1?"":"s"} in a row`,prog:Math.min(1,bs/n)}));
+  [25,50,100,250,500,1000,1500,2000].forEach(n=>out.push({g:"Hours",t:`${n} hours studied`,got:th>=n,left:`${(n-th).toFixed(1)} more hours`,prog:Math.min(1,th/n)}));
+  [10,25,50,75,100].forEach(n=>out.push({g:"Syllabus",t:`${n}% of syllabus`,got:ov>=n,left:`${Math.ceil(n-ov)}% more syllabus`,prog:Math.min(1,ov/n)}));
+  activePapers().forEach(p=>{const L=CH[p.id],rd=L.filter((_,i)=>chState(p.id,i).r).length;out.push({g:"First reading",t:`${p.short} first reading done`,got:rd===L.length,left:`${L.length-rd} more ${p.short} chapter${L.length-rd===1?"":"s"} to read`,prog:rd/L.length})});
+  const mk=S.mocks.length;out.push({g:"Mocks",t:"First mock written",got:mk>=1,left:"write 1 mock",prog:Math.min(1,mk)});
+  out.push({g:"Mocks",t:"5 mocks written",got:mk>=5,left:`${5-mk} more mocks`,prog:Math.min(1,mk/5)});
+  const best=S.mocks.reduce((a,m)=>Math.max(a,m.score/m.max*100),0);out.push({g:"Mocks",t:"60%+ in a mock",got:best>=60,left:`${Math.ceil(60-best)} more marks on your best mock`,prog:Math.min(1,best/60)});
+  const ms=J.filter(e=>e.mastered).length;out.push({g:"Tough topics",t:"First tough topic mastered",got:ms>=1,left:"master 1 tough topic",prog:ms?1:Math.min(.9,J.reduce((a,e)=>Math.max(a,(e.box||0)/5),0))});
+  return out}
+function journeyCard(){
+  const plan=buildPlan(),st=parse(S.settings.startDate),ex=parse(examStart()),total=Math.max(1,diffDays(st,ex)),dn=Math.min(total,Math.max(0,diffDays(st,new Date())+1));
+  const tp=dn/total,syl=overall(),exp=expectedPct(plan);
+  const due=targetSum(st,parse(todayISO())),studied=hoursStudied(),cons=due?studied/due:0;
+  const bs=badges(),got=bs.filter(b=>b.got),next=bs.filter(b=>!b.got).sort((a,b)=>b.prog-a.prog).slice(0,3);
+  let dots="";for(let i=27;i>=0;i--){const d=addDays(new Date(),-i),k=iso(d),h=hoursOn(k),tg=dayTarget(d);const pre=k<S.settings.startDate;dots+=`<i class="${h>=tg&&tg>0?"full":h>0?"part":""} ${pre?"fut":""}" title="${fmtShort(d)}: ${h.toFixed(1)} of ${tg} h"></i>`}
+  const hit=(()=>{let c=0,n=0;for(let i=0;i<28;i++){const d=addDays(new Date(),-i),k=iso(d);if(k<S.settings.startDate)continue;n++;const tg=dayTarget(d);if(tg>0&&hoursOn(k)>=tg)c++}return {c,n}})();
+  const msg=syl>=exp+.02?"You're ahead of plan. Keep this rhythm."
+    :cons>=.95?"Your hours are right on target. Tick chapters as you finish them so your progress shows."
+    :due-studied<1?"Every hour counts. Log today's study to stay on course."
+    :`You're ${Math.round(due-studied)} hours behind your target so far. Two focused weekend sessions close most of it.`;
+  return `<div class="card">
+    <div class="row between"><div class="label">Your journey</div><div class="row small"><span class="lvl" title="Milestones reached">${got.length}</span><span class="muted">level · ${got.length} of ${bs.length} milestones</span></div></div>
+    <div class="row between small"><span><b>Day ${dn}</b> of ${total}</span><span class="muted">${fmtShort(st)} → first paper ${fmtShort(ex)}</span></div>
+    <div class="road" role="img" aria-label="Syllabus ${Math.round(syl*100)}% done, ${Math.round(tp*100)}% of time gone, plan expects ${Math.round(exp*100)}%">
+      <div class="time" style="width:${tp*100}%"></div><div class="done" style="width:${Math.max(syl*100,syl>0?2:0)}%"></div>
+      <div class="planm" style="left:${exp*100}%" title="Where the plan expects you"></div><div class="you" style="left:${Math.min(100,syl*100)}%" title="You: ${Math.round(syl*100)}%"></div>
+    </div>
+    <div class="legend"><span><span class="swatch" style="background:var(--accent)"></span>Syllabus done ${Math.round(syl*100)}%</span><span><span class="swatch" style="background:var(--line)"></span>Time gone ${Math.round(tp*100)}%</span><span><span class="swatch" style="background:var(--fg);opacity:.55;width:3px"></span>Plan today ${Math.round(exp*100)}%</span></div>
+    <p class="small" style="margin:0">${msg}</p>
+    <div class="grid g3" style="gap:12px">
+      <div class="stat"><span class="label">Hours vs target so far</span><b>${studied.toFixed(0)}<span class="small muted"> / ${Math.round(due)} h</span></b><div class="bar"><i style="width:${Math.min(100,cons*100)}%"></i></div></div>
+      <div class="stat"><span class="label">Streak · best</span><b>${streak()}<span class="small muted"> · ${bestStreak()} days</span></b></div>
+      <div class="stat"><span class="label">Days on target · 4 weeks</span><b>${hit.c}<span class="small muted"> / ${hit.n}</span></b></div>
+    </div>
+    <div class="grid" style="gap:6px"><span class="label">Last 28 days</span><div class="dots">${dots}</div><div class="legend small"><span><i class="swatch" style="background:var(--h4)"></i>target hit</span><span><i class="swatch" style="background:var(--h2)"></i>studied</span><span><i class="swatch" style="background:var(--h0)"></i>missed</span></div></div>
+    ${next.length?`<div class="grid" style="gap:6px"><span class="label">Next milestones</span>${next.map(b=>`<div class="ms"><span class="small"><b>${esc(b.t)}</b> <span class="muted">· ${esc(b.left)}</span></span><span class="num small muted" style="text-align:right">${Math.round(b.prog*100)}%</span><div class="bar" style="grid-column:1/-1"><i style="width:${b.prog*100}%"></i></div></div>`).join("")}</div>`:""}
+    ${got.length?`<div class="row small">${got.slice(-6).reverse().map(b=>`<span class="chip A">${esc(b.t)}</span>`).join("")}${got.length>6?`<span class="small muted">+${got.length-6} more</span>`:""}</div>`:""}
+  </div>`}
 function hitDays(n){let c=0;for(let i=0;i<n;i++){const d=addDays(new Date(),-i);const tg=dayTarget(d);if(tg>0&&hoursOn(iso(d))>=tg)c++}return c}
 /* focus timer (kept on this device) */
 const TK=LS+".timer"; let timer=null; try{timer=JSON.parse(localStorage.getItem(TK)||"null")}catch(e){}
@@ -827,6 +892,7 @@ V.today=()=>{
   const todos=S.todos[t]||[];
   const daysLeft=diffDays(new Date(),parse(examStart()));
   return `
+  ${journeyCard()}
   <div class="grid g2">
     <div class="card hero">
       <div class="label">Where you are</div>
@@ -1045,23 +1111,39 @@ V.playbook=()=>`
     <li><b>21:00–22:00</b> Revise today's notes plus anything overdue from the Today tab. Plan tomorrow's tasks.</li>
   </ul><p class="small muted">Adjust to your rhythm. The point is two papers in parallel and daily writing practice.</p></div></details>`;
 
+const SHARE=[["hours","Hours (today, last 7 days, % of target)"],["streak","Streak"],["syllabus","Syllabus %"],["mocks","Mock average"],["courses","SPOM & courses"],["total","Total hours"],["level","Level (milestones)"]];
+const COLS=[["today","Today"],["week","Last 7 days"],["target","Of target"],["streak","Streak"],["syllabus","Syllabus"],["mocks","Mock avg"],["courses","SPOM & courses"],["total","Total hours"],["level","Level"]];
 V.squad=()=>{
+  const nC=CHECKS["Courses, SPOM & articleship"].length, hid='<span class="muted" title="Not shared">–</span>';
   const invite=`<div class="card"><div class="label">Add friends to compete</div><div class="prose small">
     <p>1. Open this page on claude.ai and click <b>Share</b>.</p>
     <p>2. Invite each friend by email and give them access that lets them <b>use</b> the page (Contributor). View-only friends can see the board but can't join it.</p>
     <p>3. They open the link signed in to Claude, set their own hours, and start ticking. Everyone shares the exam schedule you set in Setup. They appear here automatically.</p>
-    <p class="muted">Only a summary is shared: hours for the last 14 days, streak, syllabus %, mock average, and how many SPOM / course items are done. Checklists, notes and to-dos stay private to each person.</p></div></div>`;
+    <p class="muted">Each person chooses what they share. Checklists, notes, tough topics and to-dos always stay private.</p></div></div>`;
+  const sh=S.settings.share||{}, cl=S.settings.cols||{}, rb=S.settings.rankBy||"week";
+  const opts=`<div class="grid g3">
+    <div class="card"><div class="label">What I share</div><p class="small muted" style="margin:0">Only ticked items leave your account. Others see a dash for the rest.</p>
+      <ul class="list small">${SHARE.map(([k,l])=>`<li><label><input type="checkbox" class="chk" data-act="share" data-k="${k}" ${sh[k]!==false?"checked":""}><span>${l}</span></label></li>`).join("")}</ul>
+      <label class="row small" style="gap:6px;border-top:1px solid var(--line);padding-top:8px"><input type="checkbox" class="chk" data-act="board" ${S.settings.onBoard?"checked":""}> Show me on the board at all</label></div>
+    <div class="card"><div class="label">Columns I see</div><p class="small muted" style="margin:0">Changes only your view of the board.</p>
+      <ul class="list small">${COLS.map(([k,l])=>`<li><label><input type="checkbox" class="chk" data-act="col" data-k="${k}" ${cl[k]!==false?"checked":""}><span>${l}</span></label></li>`).join("")}</ul></div>
+    <div class="card"><div class="label">Rank the board by</div>
+      <div class="pills">${Object.entries(RANKS).map(([k,l])=>`<button class="${rb===k?"on":""}" data-act="rankby" data-k="${k}">${l}</button>`).join("")}</div>
+      <p class="small muted" style="margin:0">"% of weekly target" is the fairest when people study different hours. People who don't share the chosen item go to the bottom.</p></div>
+  </div>`;
   if(!boardCol) return `<h2>Squad</h2><div class="card"><p style="margin:0">The squad board needs the Claude-hosted version of this page, opened while signed in to Claude. In a plain browser copy, your progress stays on this device only.</p></div>${invite}`;
   const rows=squadRows(); refreshNames(rows.map(r=>r.id));
-  const leader=rows[0];
+  const C={today:r=>r.today==null?hid:r.today.toFixed(1)+"h",week:r=>r.wk==null?hid:`<b>${r.wk.toFixed(1)}h</b>`,target:r=>r.tp==null?hid:`<span style="color:${r.tp>=100?"var(--good)":r.tp>=75?"inherit":"var(--warn)"}">${r.tp}%</span>`,
+    streak:r=>r.st==null?hid:`${r.st}d${r.best?` <span class="muted small">best ${r.best}</span>`:""}`,syllabus:r=>r.pct==null?hid:r.pct+"%",mocks:r=>r.mockAvg==null?hid:r.mockAvg+"%",courses:r=>r.courses==null?hid:r.courses+"/"+nC,total:r=>r.tot==null?hid:Math.round(r.tot)+"h",level:r=>r.lvl==null?hid:`<span class="lvl" style="min-width:1.7rem;height:1.7rem;font-size:.8rem">${r.lvl}</span>`};
+  const vis=COLS.filter(([k])=>cl[k]!==false);
   return `
-  <div class="row between"><h2>Squad</h2><label class="row small" style="gap:6px"><input type="checkbox" class="chk" data-act="board" ${S.settings.onBoard?"checked":""}> Show me on the board</label></div>
+  <div class="row between"><h2>Squad</h2><span class="small muted">Ranked by ${esc(RANKS[rb]).toLowerCase()}</span></div>
   ${boardErr?`<div class="card"><p class="small" style="margin:0;color:var(--warn)">Your summary couldn't be posted (${esc(boardErr)}). Ask the page owner for Contributor access.</p></div>`:""}
-  ${rows.length?`<div class="tablewrap"><table><tr><th class="c">#</th><th>Name</th><th class="c">Today</th><th class="c">Last 7 days</th><th class="c">Of target</th><th class="c">Streak</th><th class="c">Syllabus</th><th class="c">Mock avg</th><th class="c">SPOM & courses</th></tr>
-    ${rows.map((r,i)=>{const pc=r.tw?Math.round(r.wk/r.tw*100):0;return `<tr><td class="c num">${i+1}</td><td>${esc(names[r.id]||"Someone")} ${r.id===myId?'<span class="chip A">you</span>':""}</td><td class="c num">${r.today.toFixed(1)}h</td><td class="c num"><b>${r.wk.toFixed(1)}h</b></td><td class="c num" style="color:${pc>=100?"var(--good)":pc>=75?"inherit":"var(--warn)"}">${pc}%</td><td class="c num">${r.st}d</td><td class="c num">${r.pct}%</td><td class="c num">${r.mockAvg==null?"–":r.mockAvg+"%"}</td><td class="c num">${r.courses==null?"–":r.courses+"/"+CHECKS["Courses, SPOM & articleship"].length}</td></tr>`}).join("")}
-  </table></div>
-  <p class="small muted" style="margin:0">Ranked by hours in the last 7 days. "Of target" compares each person with their own weekday and weekend targets, so different schedules compete fairly.${leader&&leader.wk>0?" Leader this week: "+esc(names[leader.id]||"Someone")+".":""}</p>`
+  ${rows.length?`<div class="tablewrap"><table><tr><th class="c">#</th><th>Name</th>${vis.map(([k,l])=>`<th class="c">${l}</th>`).join("")}</tr>
+    ${rows.map((r,i)=>`<tr><td class="c num">${i+1}</td><td>${esc(names[r.id]||"Someone")} ${r.id===myId?'<span class="chip A">you</span>':""}</td>${vis.map(([k])=>`<td class="c num">${C[k](r)}</td>`).join("")}</tr>`).join("")}
+  </table></div>`
   :`<div class="card"><p class="muted" style="margin:0">Nobody is on the board yet. Log some hours and you'll appear here.</p></div>`}
+  ${opts}
   ${invite}`;
 };
 
@@ -1202,6 +1284,7 @@ document.addEventListener("click",e=>{
   const b=e.target.closest("[data-act]");
   if(b){const a=b.dataset.act;
     if(jClick(b))return;
+    if(a==="rankby"){S.settings.rankBy=b.dataset.k;save();render();return}
     if(evClick(b))return;
     if(a==="hr"){const t=todayISO();S.log[t]=S.log[t]||{};S.log[t][b.dataset.p]=Math.max(0,(+S.log[t][b.dataset.p]||0)+ +b.dataset.d);save();render();return}
     if(a==="deltodo"){S.todos[todayISO()].splice(+b.dataset.i,1);save();render();return}
@@ -1229,6 +1312,8 @@ document.addEventListener("change",e=>{
   if(a==="jclick"){const e=J.find(x=>x.id===b.dataset.id);if(e){e.clicked=b.value;jPut(e)}return}
   if(a==="fill"){const dd=defaultDates(b.value);for(const k in dd){const el=document.getElementById("ex-"+k);if(el)el.value=dd[k]}return}
   if(a==="board"){S.settings.onBoard=b.checked;save();pushBoard();render();return}
+  if(a==="share"){S.settings.share=Object.assign({},S.settings.share,{[b.dataset.k]:b.checked});save();pushBoard();render();return}
+  if(a==="col"){S.settings.cols=Object.assign({},S.settings.cols,{[b.dataset.k]:b.checked});save();render();return}
   if(a==="check"){S.checks[b.dataset.k]=b.checked;save();render()}
   if(a==="note"){const k=b.dataset.k;S.ch[k]=Object.assign({},S.ch[k],{note:b.value});save()}
 });
