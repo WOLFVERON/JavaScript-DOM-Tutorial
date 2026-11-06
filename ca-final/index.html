@@ -133,6 +133,8 @@ svg text{fill:var(--muted);font-family:var(--mono);font-size:10px}
 .legend span{display:inline-flex;align-items:center;gap:5px}
 @media (max-width:560px){.paperline{grid-template-columns:4.5rem 1fr 2.8rem}.grow{grid-template-columns:5.5rem 1fr}.count b{font-size:1.25rem}}
 html{overflow-x:hidden}
+.notice{display:flex;justify-content:space-between;gap:10px;align-items:center;margin-top:12px;padding:10px 12px;border-radius:8px;border:1px solid var(--line);background:var(--surface);font-size:.85rem}
+.notice.warn{border-color:var(--warn)}.notice.bad{border-color:var(--bad)}
 .road{position:relative;height:18px;background:var(--sunk);border-radius:99px;overflow:visible}
 .road .time{position:absolute;inset:0 auto 0 0;border-radius:99px;background:repeating-linear-gradient(135deg,var(--line) 0 6px,transparent 6px 12px)}
 .road .done{position:absolute;inset:0 auto 0 0;border-radius:99px;background:var(--accent);transition:width .8s cubic-bezier(.2,.8,.2,1)}
@@ -174,6 +176,7 @@ nav.tabs{position:relative}
     </nav>
   </div>
 </header>
+<div class="wrap"><div id="notice" role="status" hidden></div></div>
 <main class="wrap" id="main"></main>
 <div class="toast" id="toast"></div>
 
@@ -188,126 +191,128 @@ const PAPERS = [
   {id:"ibs", short:"IBS", name:"Paper 6 · Integrated Business Solutions (case study)", group:2, color:"--p6", w:0.6},
 ];
 // [name, priority A/B/C, hint]
+/* Each row: [name, priority, hint, permanent ID]. IDs never change or get reused: when the syllabus changes,
+   add rows with new IDs, and only delete a row after migrating its saved data. That keeps progress attached to the right chapter. */
 const CH = {
 fr:[
- ["Ind AS 115 · Revenue from Contracts with Customers","A","5-step model, variable consideration, principal vs agent"],
- ["Ind AS 109 / 32 / 107 · Financial Instruments","A","Classification, ECL, EIR, compound instruments, derecognition"],
- ["Ind AS 103 · Business Combinations (incl. common control)","A","Acquisition method, goodwill / bargain purchase, Appendix C"],
- ["Ind AS 110 / 111 / 27 / 28 / 112 · Consolidation & Group Accounts","A","CFS, NCI, step acquisition, JA, equity method"],
- ["Ind AS 116 · Leases","A","Lessee ROU, modifications, sale & leaseback"],
- ["Ind AS 102 · Share-based Payment","A","Equity vs cash settled, modifications, group plans"],
- ["Ind AS 36 · Impairment of Assets","A","CGU, recoverable amount, goodwill allocation"],
- ["Ind AS 1, 34, 7 · Presentation, Interim, Cash Flows","B","Schedule III Div II, interim measurement"],
- ["Ind AS 8, 10, 113 · Policies, Events after RP, Fair Value","B","Errors vs estimates, adjusting events, FV hierarchy"],
- ["Ind AS 16, 23, 40, 105 · PPE, Borrowing Costs, Inv. Property, Held for Sale","B",""],
- ["Ind AS 2 & 38 · Inventories, Intangibles","B",""],
- ["Ind AS 12 · Income Taxes","B","Temporary differences, DTA recognition"],
- ["Ind AS 19 · Employee Benefits","B","Defined benefit, OCI remeasurement"],
- ["Ind AS 37 · Provisions & Contingencies","B","Onerous contracts, restructuring"],
- ["Ind AS 21 · Foreign Exchange","B","Functional currency, translation of foreign ops"],
- ["Ind AS 24, 33, 108 · Related Parties, EPS, Segments","B","Diluted EPS is a scoring area"],
- ["Ind AS 20 & 41 · Govt Grants, Agriculture","C",""],
- ["Ind AS 101 · First-time Adoption","B","Mandatory exceptions, optional exemptions"],
- ["Conceptual Framework & Introduction to Ind AS","C",""],
- ["Analysis of Financial Statements (integrated questions)","B","Error-spotting case questions"],
- ["Professional & Ethical Duty; Accounting & Technology","C",""],
+ ["Ind AS 115 · Revenue from Contracts with Customers","A","5-step model, variable consideration, principal vs agent","fr-0"],
+ ["Ind AS 109 / 32 / 107 · Financial Instruments","A","Classification, ECL, EIR, compound instruments, derecognition","fr-1"],
+ ["Ind AS 103 · Business Combinations (incl. common control)","A","Acquisition method, goodwill / bargain purchase, Appendix C","fr-2"],
+ ["Ind AS 110 / 111 / 27 / 28 / 112 · Consolidation & Group Accounts","A","CFS, NCI, step acquisition, JA, equity method","fr-3"],
+ ["Ind AS 116 · Leases","A","Lessee ROU, modifications, sale & leaseback","fr-4"],
+ ["Ind AS 102 · Share-based Payment","A","Equity vs cash settled, modifications, group plans","fr-5"],
+ ["Ind AS 36 · Impairment of Assets","A","CGU, recoverable amount, goodwill allocation","fr-6"],
+ ["Ind AS 1, 34, 7 · Presentation, Interim, Cash Flows","B","Schedule III Div II, interim measurement","fr-7"],
+ ["Ind AS 8, 10, 113 · Policies, Events after RP, Fair Value","B","Errors vs estimates, adjusting events, FV hierarchy","fr-8"],
+ ["Ind AS 16, 23, 40, 105 · PPE, Borrowing Costs, Inv. Property, Held for Sale","B","","fr-9"],
+ ["Ind AS 2 & 38 · Inventories, Intangibles","B","","fr-10"],
+ ["Ind AS 12 · Income Taxes","B","Temporary differences, DTA recognition","fr-11"],
+ ["Ind AS 19 · Employee Benefits","B","Defined benefit, OCI remeasurement","fr-12"],
+ ["Ind AS 37 · Provisions & Contingencies","B","Onerous contracts, restructuring","fr-13"],
+ ["Ind AS 21 · Foreign Exchange","B","Functional currency, translation of foreign ops","fr-14"],
+ ["Ind AS 24, 33, 108 · Related Parties, EPS, Segments","B","Diluted EPS is a scoring area","fr-15"],
+ ["Ind AS 20 & 41 · Govt Grants, Agriculture","C","","fr-16"],
+ ["Ind AS 101 · First-time Adoption","B","Mandatory exceptions, optional exemptions","fr-17"],
+ ["Conceptual Framework & Introduction to Ind AS","C","","fr-18"],
+ ["Analysis of Financial Statements (integrated questions)","B","Error-spotting case questions","fr-19"],
+ ["Professional & Ethical Duty; Accounting & Technology","C","","fr-20"],
 ],
 afm:[
- ["Derivatives Analysis & Valuation","A","Futures, options, Black-Scholes, binomial, swaps"],
- ["Foreign Exchange Exposure & Risk Management","A","Forward cover, money market hedge, IRP / PPP"],
- ["Portfolio Management","A","CAPM, beta, Sharpe / Treynor, APT, efficient frontier"],
- ["Security Valuation","A","Bond YTM, duration, equity valuation, convertibles"],
- ["Business Valuation","A","DCF, EVA, relative valuation"],
- ["Mergers, Acquisitions & Corporate Restructuring","A","Swap ratio, synergy, buy-back"],
- ["Mutual Funds","B","NAV, returns, expense ratio"],
- ["Risk Management","B","VaR, risk types"],
- ["Advanced Capital Budgeting Decisions","B","Risk-adjusted NPV, real options"],
- ["Security Analysis","B","Fundamental & technical analysis"],
- ["International Financial Management","B","International capital budgeting, ADR / GDR"],
- ["Interest Rate Risk Management","B","FRA, IRF, caps & floors"],
- ["Securitization","C",""],
- ["Startup Finance","C","Theory, pitch deck, funding stages"],
- ["Financial Policy & Corporate Strategy","C","Theory"],
+ ["Derivatives Analysis & Valuation","A","Futures, options, Black-Scholes, binomial, swaps","afm-0"],
+ ["Foreign Exchange Exposure & Risk Management","A","Forward cover, money market hedge, IRP / PPP","afm-1"],
+ ["Portfolio Management","A","CAPM, beta, Sharpe / Treynor, APT, efficient frontier","afm-2"],
+ ["Security Valuation","A","Bond YTM, duration, equity valuation, convertibles","afm-3"],
+ ["Business Valuation","A","DCF, EVA, relative valuation","afm-4"],
+ ["Mergers, Acquisitions & Corporate Restructuring","A","Swap ratio, synergy, buy-back","afm-5"],
+ ["Mutual Funds","B","NAV, returns, expense ratio","afm-6"],
+ ["Risk Management","B","VaR, risk types","afm-7"],
+ ["Advanced Capital Budgeting Decisions","B","Risk-adjusted NPV, real options","afm-8"],
+ ["Security Analysis","B","Fundamental & technical analysis","afm-9"],
+ ["International Financial Management","B","International capital budgeting, ADR / GDR","afm-10"],
+ ["Interest Rate Risk Management","B","FRA, IRF, caps & floors","afm-11"],
+ ["Securitization","C","","afm-12"],
+ ["Startup Finance","C","Theory, pitch deck, funding stages","afm-13"],
+ ["Financial Policy & Corporate Strategy","C","Theory","afm-14"],
 ],
 audit:[
- ["Quality Management (SQC 1 / SQM 1 & 2, SA 220)","A",""],
- ["General Auditing Principles & Auditor's Responsibilities (SA 200 series)","A","SA 200, 210, 230, 240, 250, 260, 265, 299"],
- ["Audit Planning, Strategy & Execution (SA 300, 315, 320, 330, 450)","A",""],
- ["Audit Evidence (SA 500 series)","A","SA 501, 505, 520, 530, 540, 550"],
- ["Completion & Review (SA 560, 570, 580)","A","Going concern is a favourite"],
- ["Reporting (SA 700 series) & CARO","A","Modified opinions, KAM, EOM / OM paragraphs"],
- ["Specialised Areas (SA 600, 610, 620, 800 series)","B",""],
- ["Related Services (SRS 4400, 4410)","B",""],
- ["Review of Financial Information (SRE 2400, 2410)","B",""],
- ["Prospective Financial Info & Other Assurance (SAE 3400, 3402, 3420)","B",""],
- ["Digital Auditing & Assurance","B","IT controls, data analytics, CAAT"],
- ["Group Audits","B",""],
- ["Audit of Banks & NBFCs","B","LFAR, NPA norms, income recognition"],
- ["Audit of Public Sector Undertakings","C",""],
- ["Internal Audit","B","SIA framework"],
- ["Due Diligence, Investigation & Forensic Accounting","B",""],
- ["Emerging Areas (sustainability, BRSR)","C",""],
- ["Professional Ethics & Liabilities of Auditors (CA Act, Code of Ethics)","A","Schedules I & II: write the clause"],
+ ["Quality Management (SQC 1 / SQM 1 & 2, SA 220)","A","","audit-0"],
+ ["General Auditing Principles & Auditor's Responsibilities (SA 200 series)","A","SA 200, 210, 230, 240, 250, 260, 265, 299","audit-1"],
+ ["Audit Planning, Strategy & Execution (SA 300, 315, 320, 330, 450)","A","","audit-2"],
+ ["Audit Evidence (SA 500 series)","A","SA 501, 505, 520, 530, 540, 550","audit-3"],
+ ["Completion & Review (SA 560, 570, 580)","A","Going concern is a favourite","audit-4"],
+ ["Reporting (SA 700 series) & CARO","A","Modified opinions, KAM, EOM / OM paragraphs","audit-5"],
+ ["Specialised Areas (SA 600, 610, 620, 800 series)","B","","audit-6"],
+ ["Related Services (SRS 4400, 4410)","B","","audit-7"],
+ ["Review of Financial Information (SRE 2400, 2410)","B","","audit-8"],
+ ["Prospective Financial Info & Other Assurance (SAE 3400, 3402, 3420)","B","","audit-9"],
+ ["Digital Auditing & Assurance","B","IT controls, data analytics, CAAT","audit-10"],
+ ["Group Audits","B","","audit-11"],
+ ["Audit of Banks & NBFCs","B","LFAR, NPA norms, income recognition","audit-12"],
+ ["Audit of Public Sector Undertakings","C","","audit-13"],
+ ["Internal Audit","B","SIA framework","audit-14"],
+ ["Due Diligence, Investigation & Forensic Accounting","B","","audit-15"],
+ ["Emerging Areas (sustainability, BRSR)","C","","audit-16"],
+ ["Professional Ethics & Liabilities of Auditors (CA Act, Code of Ethics)","A","Schedules I & II: write the clause","audit-17"],
 ],
 dt:[
- ["Basic Concepts, Residence & Scope of Total Income","B",""],
- ["Incomes not forming part of Total Income","B","Including tax holidays"],
- ["Profits & Gains of Business or Profession","A","Deductions, disallowances, presumptive tax"],
- ["Capital Gains","A","Special provisions, exemptions, business reorganisation"],
- ["Income from Other Sources","B",""],
- ["Clubbing, Set-off & Carry Forward of Losses","B",""],
- ["Deductions from Gross Total Income","B",""],
- ["Assessment of Business Entities (firms, LLP, companies, MAT / AMT)","A","Including new regime provisions"],
- ["Assessment of Trusts & Institutions","B",""],
- ["Taxation of Digital Transactions","C",""],
- ["Deduction, Collection & Recovery of Tax (TDS / TCS)","A","High frequency; know rates and thresholds"],
- ["Income Computation & Disclosure Standards (ICDS)","C",""],
- ["Assessment Procedure, Appeals & Revision","B",""],
- ["Dispute Resolution, Penalties, Offences & Prosecution","B",""],
- ["Liability in Special Cases & Miscellaneous","C",""],
- ["Non-resident Taxation","A",""],
- ["Double Taxation Relief","B",""],
- ["Advance Rulings","C",""],
- ["Transfer Pricing","A","Methods, safe harbour, APAs, secondary adjustment"],
- ["Equalisation Levy","C",""],
- ["Model Tax Conventions & Interpretation of Tax Treaties","B",""],
- ["Fundamentals of BEPS & Latest Developments","B",""],
+ ["Basic Concepts, Residence & Scope of Total Income","B","","dt-0"],
+ ["Incomes not forming part of Total Income","B","Including tax holidays","dt-1"],
+ ["Profits & Gains of Business or Profession","A","Deductions, disallowances, presumptive tax","dt-2"],
+ ["Capital Gains","A","Special provisions, exemptions, business reorganisation","dt-3"],
+ ["Income from Other Sources","B","","dt-4"],
+ ["Clubbing, Set-off & Carry Forward of Losses","B","","dt-5"],
+ ["Deductions from Gross Total Income","B","","dt-6"],
+ ["Assessment of Business Entities (firms, LLP, companies, MAT / AMT)","A","Including new regime provisions","dt-7"],
+ ["Assessment of Trusts & Institutions","B","","dt-8"],
+ ["Taxation of Digital Transactions","C","","dt-9"],
+ ["Deduction, Collection & Recovery of Tax (TDS / TCS)","A","High frequency; know rates and thresholds","dt-10"],
+ ["Income Computation & Disclosure Standards (ICDS)","C","","dt-11"],
+ ["Assessment Procedure, Appeals & Revision","B","","dt-12"],
+ ["Dispute Resolution, Penalties, Offences & Prosecution","B","","dt-13"],
+ ["Liability in Special Cases & Miscellaneous","C","","dt-14"],
+ ["Non-resident Taxation","A","","dt-15"],
+ ["Double Taxation Relief","B","","dt-16"],
+ ["Advance Rulings","C","","dt-17"],
+ ["Transfer Pricing","A","Methods, safe harbour, APAs, secondary adjustment","dt-18"],
+ ["Equalisation Levy","C","","dt-19"],
+ ["Model Tax Conventions & Interpretation of Tax Treaties","B","","dt-20"],
+ ["Fundamentals of BEPS & Latest Developments","B","","dt-21"],
 ],
 idt:[
- ["Supply under GST (incl. composite / mixed supply)","A",""],
- ["Charge of GST (RCM, ECO)","A",""],
- ["Exemptions from GST","A","Long list: revise often"],
- ["Place of Supply","A",""],
- ["Time of Supply","B",""],
- ["Value of Supply","A",""],
- ["Input Tax Credit","A","Blocked credits, apportionment, reversal"],
- ["Registration","B",""],
- ["Tax Invoice, Credit & Debit Notes, E-way Bill","B",""],
- ["Accounts & Records; Payment of Tax; Returns","B",""],
- ["Import & Export under GST; Refunds","A",""],
- ["Job Work; Assessment & Audit","B",""],
- ["Inspection, Search, Seizure & Arrest","B",""],
- ["Demands & Recovery; Liability in Certain Cases","B",""],
- ["Offences & Penalties; Appeals & Revision; Advance Ruling","B",""],
- ["Levy of & Exemptions from Customs Duty; Types of Duty","A",""],
- ["Classification of Imported & Export Goods","B",""],
- ["Valuation under Customs","A",""],
- ["Importation, Exportation & Transportation; Warehousing","B",""],
- ["Refund under Customs","C",""],
- ["Foreign Trade Policy","B",""],
+ ["Supply under GST (incl. composite / mixed supply)","A","","idt-0"],
+ ["Charge of GST (RCM, ECO)","A","","idt-1"],
+ ["Exemptions from GST","A","Long list: revise often","idt-2"],
+ ["Place of Supply","A","","idt-3"],
+ ["Time of Supply","B","","idt-4"],
+ ["Value of Supply","A","","idt-5"],
+ ["Input Tax Credit","A","Blocked credits, apportionment, reversal","idt-6"],
+ ["Registration","B","","idt-7"],
+ ["Tax Invoice, Credit & Debit Notes, E-way Bill","B","","idt-8"],
+ ["Accounts & Records; Payment of Tax; Returns","B","","idt-9"],
+ ["Import & Export under GST; Refunds","A","","idt-10"],
+ ["Job Work; Assessment & Audit","B","","idt-11"],
+ ["Inspection, Search, Seizure & Arrest","B","","idt-12"],
+ ["Demands & Recovery; Liability in Certain Cases","B","","idt-13"],
+ ["Offences & Penalties; Appeals & Revision; Advance Ruling","B","","idt-14"],
+ ["Levy of & Exemptions from Customs Duty; Types of Duty","A","","idt-15"],
+ ["Classification of Imported & Export Goods","B","","idt-16"],
+ ["Valuation under Customs","A","","idt-17"],
+ ["Importation, Exportation & Transportation; Warehousing","B","","idt-18"],
+ ["Refund under Customs","C","","idt-19"],
+ ["Foreign Trade Policy","B","","idt-20"],
 ],
 ibs:[
- ["Case-study approach: reading, mapping issues, answer format","A","Practise structured answers under time"],
- ["FR concepts applied in cases","A",""],
- ["AFM concepts applied in cases","B",""],
- ["Audit & Ethics applied in cases","A",""],
- ["DT & IDT applied in cases","B",""],
- ["Corporate & Economic Laws (SPOM Set A) in cases","B",""],
- ["Strategic Cost & Performance Management (SPOM Set B) in cases","B",""],
- ["ICAI case-study compilation: first pass","A",""],
- ["ICAI case-study compilation: second pass, timed","A",""],
- ["RTP / MTP case studies","A",""],
- ["Past exam case studies","A",""],
+ ["Case-study approach: reading, mapping issues, answer format","A","Practise structured answers under time","ibs-0"],
+ ["FR concepts applied in cases","A","","ibs-1"],
+ ["AFM concepts applied in cases","B","","ibs-2"],
+ ["Audit & Ethics applied in cases","A","","ibs-3"],
+ ["DT & IDT applied in cases","B","","ibs-4"],
+ ["Corporate & Economic Laws (SPOM Set A) in cases","B","","ibs-5"],
+ ["Strategic Cost & Performance Management (SPOM Set B) in cases","B","","ibs-6"],
+ ["ICAI case-study compilation: first pass","A","","ibs-7"],
+ ["ICAI case-study compilation: second pass, timed","A","","ibs-8"],
+ ["RTP / MTP case studies","A","","ibs-9"],
+ ["Past exam case studies","A","","ibs-10"],
 ],
 };
 const STAGES = [["r","Read",.40],["r1","Rev 1",.20],["r2","Rev 2",.15],["r3","Rev 3",.10],["q","Qs",.15]];
@@ -326,31 +331,87 @@ function esc(s){return String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&l
 const GAP={fr:0,afm:2,audit:4,dt:6,idt:8,ibs:10};
 function defaultDates(first){const o={};for(const k in GAP)o[k]=iso(addDays(parse(first),GAP[k]));return o}
 function freshState(){
-  return {v:1, updatedAt:0,
-    settings:{examDates:defaultDates("2028-11-02"), startDate:todayISO(), groups:"both", tWd:2.5, tWe:8, revDays:21, targetPct:75, onBoard:true, share:{hours:true,streak:true,syllabus:true,mocks:true,courses:true,total:true,level:true}, cols:{today:true,week:true,target:true,streak:true,syllabus:true,mocks:true,courses:true,total:true,level:true}, rankBy:"week"},
+  return {v:DATA_VERSION, updatedAt:0,
+    settings:{examDates:defaultDates("2028-11-02"), startDate:todayISO(), groups:"both", tWd:2.5, tWe:8, revDays:21, targetPct:75, frDone:false, onBoard:false, share:{hours:true,streak:true,syllabus:true,mocks:true,courses:true,total:true,level:true}, cols:{today:true,week:true,target:true,streak:true,syllabus:true,mocks:true,courses:true,total:true,level:true}, rankBy:"week"},
     ch:{}, log:{}, mocks:[], checks:{}, todos:{}};
 }
-let S = freshState();
-function load(o){const f=freshState();const x=Object.assign(f,o);const os=o.settings||{};x.settings=Object.assign(freshState().settings,os);if(!os.examDates&&os.examDate)x.settings.examDates=defaultDates(os.examDate);delete x.settings.examDate;return x}
-try{const raw=localStorage.getItem(LS); if(raw){S=load(JSON.parse(raw));}}catch(e){}
+/* ---- data versions: each step upgrades saved data by one version ---- */
+const DATA_VERSION=2;
+const MIGRATIONS={
+  2:o=>{ // v1 -> v2: revision history on chapters, drop malformed records
+    o.ch=isObj(o.ch)?o.ch:{};for(const k in o.ch){const c=o.ch[k];if(!isObj(c)){delete o.ch[k];continue}if(!Array.isArray(c.hist))c.hist=c.last?[{d:c.last,s:"legacy"}]:[]}
+    o.mocks=Array.isArray(o.mocks)?o.mocks.filter(m=>m&&m.id&&isFinite(+m.score)&&+m.max>0):[];
+    for(const k of ["log","checks","todos"])if(!isObj(o[k]))o[k]={};
+    return o}
+};
+function migrate(o){let v=+o.v||1;while(v<DATA_VERSION){v++;o=MIGRATIONS[v](o);o.v=v}return o}
+function isObj(x){return !!x&&typeof x==="object"&&!Array.isArray(x)}
+function load(o){o=JSON.parse(JSON.stringify(o||{}));const os=isObj(o.settings)?o.settings:{};if(!os.examDates&&os.examDate)os.examDates=defaultDates(os.examDate);delete os.examDate;
+  o=migrate(o);const x=Object.assign(freshState(),o);x.settings=Object.assign(freshState().settings,os);
+  if(!isObj(x.settings.examDates))x.settings.examDates=freshState().settings.examDates;x.v=DATA_VERSION;return x}
 
-let dbRef=null, writing=false, dirty=false, lastSent="", saveTimer=null;
+let dbRef=null, writing=false, dirty=false, lastSent="", saveTimer=null, retryN=0, retryT=null;
+/* ---- device storage: never fails silently ---- */
+const store={
+  get(k,d){try{const v=localStorage.getItem(k);return v==null?d:JSON.parse(v)}catch(e){return d}},
+  set(k,v){const str=typeof v==="string"?v:JSON.stringify(v);try{localStorage.setItem(k,str);return true}catch(e){
+    if(k!==LS+".evals"){try{localStorage.removeItem(LS+".evals");localStorage.setItem(k,str);notice("This device's storage was full, so the offline copy of evaluations was cleared. Everything is still in your account.","warn");return true}catch(_){}}
+    notice("This device's storage is full, so your latest changes couldn't be saved on this device."+(dbRef?" They're still being saved to your account.":" Copy a backup from Setup now."),"bad");return false}},
+  del(k){try{localStorage.removeItem(k)}catch(e){}}
+};
+function notice(msg,kind){const n=document.getElementById("notice");if(!n)return;if(!msg){n.hidden=true;return}n.className="notice "+(kind||"");n.innerHTML=`<span>${esc(msg)}</span><button class="ghost" data-act="dismissNotice" aria-label="Dismiss">×</button>`;n.hidden=false}
+
+let S = freshState();
+(function boot(){const raw=store.get(LS,null);if(!raw)return;
+  if((+raw.v||1)<DATA_VERSION){store.set(LS+".restorePoint",{at:Date.now(),reason:"Before the upgrade to data version "+DATA_VERSION,b:{format:"ca-final-rank-desk",version:1,state:raw,journal:store.get(LS+".journal",[]),evals:[]}})}
+  try{S=load(raw)}catch(e){notice("Your saved data couldn't be read, so the app started fresh. Use Setup → Undo to the restore point to get it back.","bad")}})();
+
+let base=store.get(LS+".base",null);
 let sharedExam=null, examDoc=null, amOwner=false;
 let boardCol=null, myId=null, userNs=null, board=[], boardReady=false, lastBoard="", boardErr="", names={};
+function setBase(o){base=o;store.set(LS+".base",o)}
+function pruneTodos(){const cut=iso(addDays(new Date(),-90));for(const k in S.todos)if(k<cut)delete S.todos[k]}
+function persistLocal(){store.set(LS,S)}
 function save(){
-  S.updatedAt=Date.now();
-  try{localStorage.setItem(LS,JSON.stringify(S))}catch(e){}
+  S.updatedAt=Date.now();pruneTodos();persistLocal();
   if(dbRef){dirty=true;clearTimeout(saveTimer);saveTimer=setTimeout(flush,1200)}
 }
+/* three-way merge: keeps changes from both devices; on a true clash the newer side wins */
+function same(a,b){return stable(a)===stable(b)}
+function merge3(b,l,r,pl){if(same(l,r))return l;if(same(l,b))return r;if(same(r,b))return l;
+  if(isObj(l)&&isObj(r)){const o={},bb=isObj(b)?b:{};new Set([...Object.keys(l),...Object.keys(r)]).forEach(k=>{const m=merge3(bb[k],l[k],r[k],pl);if(m!==undefined)o[k]=m});return o}
+  return pl?l:r}
+function toMap(a){const o={};(a||[]).forEach(m=>{if(m&&m.id)o[m.id]=m});return o}
+function mergeState(b,l,r){const pl=(l.updatedAt||0)>=(r.updatedAt||0),prep=x=>x?Object.assign({},x,{mocks:toMap(x.mocks)}):{};
+  const m=merge3(prep(b),prep(l),prep(r),pl);m.mocks=Object.values(isObj(m.mocks)?m.mocks:{}).sort((a,c)=>a.date<c.date?-1:1);m.updatedAt=Math.max(l.updatedAt||0,r.updatedAt||0);return load(m)}
 async function flush(){
   if(!dbRef||writing||!dirty) return;
-  writing=true; dirty=false;
-  const s=JSON.stringify(S); lastSent=s;
-  try{await dbRef.set({s, t:S.updatedAt}); setSync(true,"Synced to your account"); pushBoard()}
-  catch(e){setSync(false,"Sync failed, saved on this device")}
-  writing=false; if(dirty) flush();
+  writing=true; dirty=false; let ok=false;
+  try{
+    const cur=await dbRef.get();const cd=cur.exists&&cur.data();
+    if(cd&&cd.s&&cd.s!==lastSent){const R=load(JSON.parse(cd.s));if(!base||!same(R,base)){S=mergeState(base||{},S,R);persistLocal();render()}}
+    const s=JSON.stringify(S);
+    if(s.length>200000)notice("Your saved data is nearing the cloud size limit. Clear old notes or contact the page owner.","warn");
+    lastSent=s; await dbRef.set({s, t:S.updatedAt}); setBase(JSON.parse(s)); ok=true; retryN=0; clearTimeout(retryT); retryT=null;
+    setSync(true,"Synced to your account"); pushBoard();
+  }catch(e){dirty=true;retryN++;const wait=[5,15,60,180][Math.min(retryN-1,3)];setSync(false,`Not synced yet, retrying in ${wait}s. Saved on this device.`);clearTimeout(retryT);retryT=setTimeout(()=>{retryT=null;flush()},wait*1000)}
+  writing=false; if(ok&&dirty){clearTimeout(saveTimer);saveTimer=setTimeout(flush,400)}
 }
+window.addEventListener("online",()=>{if(dirty)flush()});
 function setSync(on,txt){document.getElementById("syncDot").classList.toggle("on",on);document.getElementById("syncText").textContent=txt}
+function remoteState(d){try{return d&&d.s?load(JSON.parse(d.s)):null}catch(e){return null}}
+/* squad board entries come from other people: keep only expected fields, as plain numbers and dates */
+const ISO_D=/^\d{4}-\d{2}-\d{2}$/;
+function num(x,lo,hi){const n=+x;return x!==null&&x!==""&&Number.isFinite(n)?Math.min(hi,Math.max(lo,n)):null}
+function cleanBoard(id,d){const o={id:String(id)};if(!isObj(d))return o;
+  if(isObj(d.days)){o.days={};for(const k in d.days)if(ISO_D.test(k)){const v=num(d.days[k],0,24);if(v!=null)o.days[k]=v}o.tWd=num(d.tWd,0,24)||0;o.tWe=num(d.tWe,0,24)||0}
+  if("streak" in d){o.streak=num(d.streak,0,9999)||0;o.best=num(d.best,0,9999)||0;o.sday=typeof d.sday==="string"&&ISO_D.test(d.sday)?d.sday:null}
+  if("pct" in d)o.pct=num(d.pct,0,100);
+  if("mockAvg" in d||"mocks" in d){o.mockAvg=num(d.mockAvg,0,100);o.mocks=num(d.mocks,0,99999)||0}
+  if("courses" in d)o.courses=num(d.courses,0,99);
+  if("tot" in d)o.tot=num(d.tot,0,999999);
+  if("lvl" in d)o.lvl=num(d.lvl,0,999);
+  return o}
 
 async function initSync(){
   if(!window.claude||!window.claude.use) return;
@@ -363,29 +424,29 @@ async function initSync(){
     initJournalSync(db,id,user);
     initEvalSync(db,id);
     examDoc=db.doc("shared/exam");
-    examDoc.onSnapshot(sn=>{const d=sn.exists?sn.data():null;sharedExam=d&&d.dates?d:null;render()},()=>{});
+    examDoc.onSnapshot(sn=>{const d=sn.exists?sn.data():null;sharedExam=d&&isObj(d.dates)?{dates:Object.fromEntries(Object.entries(d.dates).filter(([k,v])=>GAP[k]!=null&&ISO_D.test(v)))}:null;render()},()=>{});
     dbRef=db.collection("data/users/"+id).doc("state");
-    const snap=await dbRef.get();
-    if(snap.exists){
-      const d=snap.data();
-      if(d && d.s && (d.t||0)>=(S.updatedAt||0)){ S=load(JSON.parse(d.s)); try{localStorage.setItem(LS,d.s)}catch(e){} render(); }
-      else { dirty=true; flush(); }
-    } else if(S.updatedAt){ dirty=true; flush(); }
+    const snap=await dbRef.get();const R=snap.exists?remoteState(snap.data()):null;
+    if(R){ if(!S.updatedAt){S=R}else{S=mergeState(base||{},S,R)} setBase(R);persistLocal(); if(!same(S,R)){dirty=true;flush()} render(); }
+    else if(S.updatedAt){ dirty=true; flush(); }
     setSync(true,"Synced to your account");
     dbRef.onSnapshot(sn=>{
       if(!sn.exists) return; const d=sn.data(); if(!d||!d.s||d.s===lastSent) return;
-      if((d.t||0)>(S.updatedAt||0)){ S=load(JSON.parse(d.s)); lastSent=d.s; try{localStorage.setItem(LS,d.s)}catch(e){} render(); }
+      const R2=remoteState(d);if(!R2)return;
+      S=mergeState(base||{},S,R2);setBase(R2);persistLocal();
+      if(!same(S,R2)){dirty=true;clearTimeout(saveTimer);saveTimer=setTimeout(flush,800)}
+      render();
     },()=>setSync(false,"Offline, saved on this device"));
     boardCol=db.collection("board");
     boardCol.onSnapshot(qs=>{
-      board=qs.docs.map(d=>Object.assign({},d.data(),{id:d.id}));
+      board=qs.docs.map(d=>cleanBoard(d.id,d.data()));
       if(!boardReady){boardReady=true;const mine=board.find(b=>b.id===myId);
-        if(mine){const o=Object.assign({},mine);delete o.id;delete o.t;lastBoard=stable(o)}else if(!S.settings.onBoard)lastBoard="off";
+        if(mine){const o=Object.assign({},mine);delete o.id;lastBoard=stable(o)}else if(!S.settings.onBoard)lastBoard="off";
         pushBoard();}
       if(view==="squad"||view==="today")render();
     },()=>{});
     if(view==="squad")render();
-  }catch(e){ dbRef=null; }
+  }catch(e){ dbRef=null; setSync(false,"Saved on this device"); }
 }
 
 function stable(o){if(o===null||typeof o!=="object")return JSON.stringify(o);return "{"+Object.keys(o).sort().map(k=>JSON.stringify(k)+":"+stable(o[k])).join(",")+"}"}
@@ -401,15 +462,15 @@ function summary(){const sh=S.settings.share||{},o={};
   if(sh.total!==false)o.tot=Math.round(totalHours()*10)/10;
   if(sh.level!==false)o.lvl=badges().filter(b=>b.got).length;
   return o}
-let boardBusy=false;
+let boardBusy=false, boardAgain=false;
 async function pushBoard(){
-  if(!boardCol||!myId||!boardReady||boardBusy)return; boardBusy=true;
+  if(!boardCol||!myId||!boardReady)return; if(boardBusy){boardAgain=true;return} boardBusy=true; boardAgain=false;
   try{
     if(!S.settings.onBoard){if(lastBoard!=="off"){await boardCol.doc(myId).delete();lastBoard="off"}}
     else{const sm=summary(),j=stable(sm);if(j!==lastBoard){await boardCol.doc(myId).set(Object.assign(sm,{t:Date.now()}));lastBoard=j}}
     boardErr="";
   }catch(e){boardErr=(e&&e.code)||"error"}
-  boardBusy=false;
+  boardBusy=false; if(boardAgain)pushBoard();
 }
 function refreshNames(ids){if(!userNs||!ids.length)return;userNs.profiles(ids).then(ps=>{let ch=false;ids.forEach(id=>{const n=(ps[id]&&ps[id].name)||"";if(names[id]!==n){names[id]=n;ch=true}});if(ch&&view==="squad")render()}).catch(()=>{})}
 const RANKS={week:"Last 7 days",target:"% of weekly target",streak:"Current streak",syllabus:"Syllabus %",total:"Total hours",level:"Level"};
@@ -464,7 +525,13 @@ function journeyCard(){
   </div>`}
 function hitDays(n){let c=0;for(let i=0;i<n;i++){const d=addDays(new Date(),-i);const tg=dayTarget(d);if(tg>0&&hoursOn(iso(d))>=tg)c++}return c}
 /* focus timer (kept on this device) */
-const TK=LS+".timer"; let timer=null; try{timer=JSON.parse(localStorage.getItem(TK)||"null")}catch(e){}
+const TK=LS+".timer"; let timer=store.get(TK,null); if(timer&&!(isFinite(timer.start)&&CH[timer.p]))timer=null;
+/* split a timed session into hours per calendar day, so sessions across midnight land on the right days */
+function splitSession(a,b){const out={};let s=a;while(s<b){const d=new Date(s),nx=new Date(d.getFullYear(),d.getMonth(),d.getDate()+1).getTime(),e=Math.min(b,nx);out[iso(d)]=(out[iso(d)]||0)+(e-s)/36e5;s=e}return out}
+/* add (or set) hours for a paper on a day; a day never exceeds 24 hours. Returns true when capped. */
+function addHours(day,p,h,mode){const l=Object.assign({},S.log[day]),cur=+l[p]||0,others=Object.entries(l).filter(([k])=>k!==p).reduce((a,[,v])=>a+(+v||0),0);
+  const want=mode==="set"?h:cur+h;const v=Math.round(Math.max(0,Math.min(24-others,want))*100)/100;
+  if(v>0)l[p]=v;else delete l[p];if(Object.keys(l).length)S.log[day]=l;else delete S.log[day];return v<want-1e-9}
 function mmss(ms){const s=Math.floor(ms/1000),h=Math.floor(s/3600),m=Math.floor(s%3600/60),x=s%60;return (h?h+":":"")+String(m).padStart(2,"0")+":"+String(x).padStart(2,"0")}
 function timerHTML(){
   if(timer){return `<span class="label">Focus · ${esc(paperOf(timer.p).short)}</span><b class="num" id="tElapsed" style="font-size:1.2rem">${mmss(Date.now()-timer.start)}</b><button class="primary" data-act="tstop">Stop and log</button><button class="ghost" data-act="tcancel">Discard</button>`}
@@ -473,7 +540,9 @@ setInterval(()=>{const el=document.getElementById("tElapsed");if(el&&timer)el.te
 
 /* ============ DERIVED ============ */
 function activePapers(){const g=S.settings.groups;return PAPERS.filter(p=>g==="both"||String(p.group)===g)}
-function chKey(p,i){return p+"-"+i}
+function chKey(p,i){return CH[p][i][3]}
+const CHMAP={};for(const p in CH)CH[p].forEach((r,i)=>{CHMAP[r[3]]={p,i,r}});
+function chRow(id){return id&&CHMAP[id]?CHMAP[id].r:null}
 function chState(p,i){return S.ch[chKey(p,i)]||{}}
 function chProgress(c){return STAGES.reduce((a,[k,,w])=>a+(c[k]?w:0),0)}
 function paperProgress(pid){const list=CH[pid];return list.reduce((a,_,i)=>a+chProgress(chState(pid,i)),0)/list.length}
@@ -490,33 +559,69 @@ function dayTarget(d){return +(isWeekend(d)?S.settings.tWe:S.settings.tWd)||0}
 function targetSum(from,to){let a=0;for(let d=new Date(from);d<=to;d=addDays(d,1))a+=dayTarget(d);return a}
 function hoursStudied(){const a=S.settings.startDate,b=iso(addDays(parse(examStart()),-1));return Object.keys(S.log).filter(k=>k>=a&&k<=b).reduce((s,k)=>s+hoursOn(k),0)}
 function hoursLeft(){const e=addDays(parse(examStart()),-1);return Math.max(0,targetSum(parse(S.settings.startDate),e)-hoursStudied())}
-function expectedPct(plan){const t=parse(todayISO());const base={1:[0,.55],2:[.55,.2],3:[.75,.15],4:[.9,.1]};for(const ph of plan.phases){if(t>=ph.start&&t<ph.end){const n=+ph.name.match(/Phase (\d)/)[1];const f=diffDays(ph.start,t)/Math.max(1,diffDays(ph.start,ph.end));const [b,w]=base[n];return b+w*f}}return t>=plan.exam?1:0}
+function expectedPct(plan){if(!plan.valid)return 0;const t=parse(todayISO());if(t<plan.start)return 0;if(t>=plan.exam)return 1;
+  const base={1:[0,.55],2:[.55,.2],3:[.75,.15],4:[.9,.1]};
+  for(const ph of plan.phases){if(t>=ph.start&&t<ph.end){const f=diffDays(ph.start,t)/Math.max(1,diffDays(ph.start,ph.end));const [b,w]=base[ph.key];return b+w*f}}return 0}
+function examsOver(){return examEnd()<todayISO()}
 function weekHrs(days,ref){let a=0;for(let i=0;i<7;i++)a+=+(days[iso(addDays(ref,-i))]||0);return a}
 function paperOf(id){return PAPERS.find(p=>p.id===id)}
 function col(p){return `var(${paperOf(p).color})`}
 
 /* Timeline generator */
+/* split `days` by weight, at least 1 day each; null when there are fewer days than items */
+function allocate(days,ws){const n=ws.length;if(!n)return [];if(days<n)return null;const out=ws.map(()=>1);let left=days-n;
+  if(left>0){const tw=ws.reduce((a,b)=>a+b,0),raw=ws.map(w=>left*w/tw),fl=raw.map(Math.floor);fl.forEach((x,i)=>out[i]+=x);let rem=left-fl.reduce((a,b)=>a+b,0);
+    raw.map((x,i)=>[x-Math.floor(x),i]).sort((a,b)=>b[0]-a[0]||a[1]-b[1]).forEach(([,i])=>{if(rem>0){out[i]++;rem--}})}return out}
 function buildPlan(){
-  const st=S.settings, start=parse(st.startDate), exam=parse(examStart());
-  const D=Math.max(diffDays(start,exam),1), ps=activePapers().map(p=>p.id);
-  const phases=[]; let cur=start;
-  const push=(name,days,desc,blocks)=>{if(days<=0)return;const end=addDays(cur,days);phases.push({name,start:cur,end,desc,blocks:blocks(cur,days)});cur=end};
-  const split=(from,days,items)=>{const tw=items.reduce((a,b)=>a+b.w,0);let c=from,out=[];items.forEach((it,i)=>{let len=i===items.length-1?diffDays(c,addDays(from,days)):Math.max(1,Math.round(days*it.w/tw));const e=addDays(c,len);out.push({papers:it.papers,label:it.label,start:c,end:e});c=e});return out};
-  let p4=Math.min(Math.max(21,Math.round(D*.12)),45); if(p4>D*.5)p4=Math.round(D*.5);
-  const R=D-p4; let p1=D>=110?Math.round(R*.6):0; let p2=Math.round((R-p1)*(p1?.58:.6)); let p3=R-p1-p2;
-  const g=st.groups;
+  const st=S.settings, start=parse(st.startDate), exam=parse(examStart()), D=diffDays(start,exam), ps=activePapers().map(p=>p.id);
+  const plan={phases:[],start,exam,D:Math.max(D,1),valid:D>=1,issue:"",warn:""};
+  if(D<1){plan.issue="Your plan start date is on or after your first paper. Choose a new start date in Setup, or update the exam schedule.";return plan}
+  let cur=start;
+  const split=(days,items)=>{const lens=allocate(days,items.map(x=>x.w));
+    if(!lens)return [{papers:[...new Set(items.flatMap(x=>x.papers))],label:"All papers (rapid)",start:cur,end:addDays(cur,days)}];
+    let c=cur;return items.map((it,i)=>{const b={papers:it.papers,label:it.label,start:c,end:addDays(c,lens[i])};c=b.end;return b})};
+  const push=(key,name,days,desc,items)=>{if(days<=0)return;plan.phases.push({key,name,start:cur,end:addDays(cur,days),desc,blocks:split(days,items)});cur=addDays(cur,days)};
+  let p4=Math.min(Math.max(21,Math.round(D*.12)),45); if(p4>D*.4)p4=Math.max(1,Math.round(D*.4));
+  const R=D-p4;
+  const [p1,p2,p3]=st.frDone?[0,...(allocate(R,[.58,.42])||[R,0])]:(allocate(R,[.6,.23,.17])||[0,R,0]);
+  const g=st.groups, per=ps.map(id=>({papers:[id],w:paperOf(id).w,label:paperOf(id).short}));
   const firstBlocks = g==="1"?[{papers:["fr","audit"],w:1.4,label:"FR + Audit"},{papers:["afm","audit"],w:1,label:"AFM + Audit"}]
     : g==="2"?[{papers:["dt","ibs"],w:1.3,label:"DT + IBS cases"},{papers:["idt","ibs"],w:1,label:"IDT + IBS cases"}]
     : [{papers:["fr","audit"],w:1.3,label:"FR + Audit"},{papers:["dt","afm"],w:1.25,label:"DT + AFM"},{papers:["idt","ibs"],w:1,label:"IDT + IBS"}];
-  push("Phase 1 · Concepts & first reading",p1,"One numerical paper paired with one theory paper. Finish ICAI study material, make your own summary notes, solve illustrations and test-your-knowledge questions. Tick Read and Qs for each chapter.",(f,d)=>split(f,d,firstBlocks));
-  push("Phase 2 · Revision 1 + question practice",p2,"Paper by paper. Revise from your notes, solve every past-paper question and RTP question for each chapter, and log weak chapters (confidence 1–2).",(f,d)=>split(f,d,ps.map(id=>({papers:[id],w:paperOf(id).w,label:paperOf(id).short}))));
-  push("Phase 3 · Revision 2 + mock cycle",p3,"Faster revision with full 3-hour papers. Write at least one full mock per paper per cycle under exam conditions, check against ICAI suggested answers, and fix presentation.",(f,d)=>split(f,d,ps.map(id=>({papers:[id],w:paperOf(id).w,label:paperOf(id).short}))));
-  push("Phase 4 · Final revision (exam mode)",p4,"Revision 3 from notes only. Amendments, MTP / RTP, formula sheets, and SA / section lists. Sleep and timing match the exam: 2 pm to 5 pm.",(f,d)=>split(f,d,ps.map(id=>({papers:[id],w:paperOf(id).w,label:paperOf(id).short}))));
-  return {phases,start,exam,D};
+  push(1,"Phase 1 · Concepts & first reading",p1,"One numerical paper paired with one theory paper. Finish ICAI study material, make your own summary notes, solve illustrations and test-your-knowledge questions. Tick Read and Qs for each chapter.",firstBlocks);
+  push(2,"Phase 2 · Revision 1 + question practice",p2,"Paper by paper. Revise from your notes, solve every past-paper question and RTP question for each chapter, and log weak chapters (confidence 1–2).",per);
+  push(3,"Phase 3 · Revision 2 + mock cycle",p3,"Faster revision with full 3-hour papers. Write at least one full mock per paper per cycle under exam conditions, check against ICAI suggested answers, and fix presentation.",per);
+  push(4,"Phase 4 · Final revision (exam mode)",p4,"Revision 3 from notes only. Amendments, MTP / RTP, formula sheets, and SA / section lists. Sleep and timing match the exam: 2 pm to 5 pm.",per);
+  if(!st.frDone&&p1<60)plan.warn=`Only ${p1} days are left for first reading of ${ps.length} papers, which is very tight. If you've already read the syllabus once, tick "I've finished first reading" in Setup and the plan moves straight to revision.`;
+  return plan;
 }
 function currentBlock(plan){const t=parse(todayISO());for(const ph of plan.phases)for(const b of ph.blocks)if(t>=b.start&&t<b.end)return {ph,b};return null}
 
 const V={};
+/* ============ RECORD COLLECTIONS ============
+   Tough topics and evaluations: one cloud document per record. Deleting leaves a marker,
+   so a device that was offline can't bring a deleted record back. */
+const TOMB=store.get(LS+".tomb",{});
+function saveTomb(){const ks=Object.keys(TOMB);if(ks.length>800)ks.sort((a,b)=>TOMB[a]-TOMB[b]).slice(0,ks.length-800).forEach(k=>delete TOMB[k]);store.set(LS+".tomb",TOMB)}
+function makeRecords(o){
+  const R={col:null,w:{}};
+  const write=(id,fn)=>{R.w[id]=(R.w[id]||Promise.resolve()).then(fn).catch(()=>{})};
+  R.saveLocal=()=>store.set(o.key,o.list().filter(e=>!TOMB[e.id]).slice(-(o.limit||100000)).map(o.toLocal));
+  R.put=e=>{e.u=Date.now();const L=o.list(),i=L.findIndex(x=>x.id===e.id);if(i<0)L.push(e);else L[i]=e;if(TOMB[e.id]){delete TOMB[e.id];saveTomb()}R.saveLocal();
+    if(R.col){const col=R.col;write(e.id,()=>o.write?o.write(col,e):col.doc(e.id).set(o.toDoc(e)))}};
+  R.remove=id=>{o.setList(o.list().filter(x=>x.id!==id));TOMB[id]=Date.now();saveTomb();R.saveLocal();
+    if(R.col){const col=R.col;write(id,()=>col.doc(id).set({deleted:true,u:Date.now()}))}};
+  R.attach=col=>{R.col=col;let first=true;col.onSnapshot(qs=>{
+    qs.docChanges().forEach(c=>{const d=c.doc.data()||{},id=c.doc.id,L=o.list(),i=L.findIndex(x=>x.id===id);
+      if(c.type==="removed"||d.deleted){if(i>=0)L.splice(i,1);if(!TOMB[id]){TOMB[id]=+d.u||Date.now();saveTomb()}return}
+      if(TOMB[id]&&(+d.u||0)<=TOMB[id])return;
+      const r=o.fromDoc(d);if(!r||r.id!==id)return;if(TOMB[id]){delete TOMB[id];saveTomb()}
+      if(i<0)L.push(r);else if((r.u||0)>(L[i].u||0))L[i]=r;});
+    if(first){first=false;const remote=new Set(qs.docs.map(d=>d.id));o.list().filter(x=>!remote.has(x.id)&&!TOMB[x.id]).forEach(x=>write(x.id,()=>o.write?o.write(col,x):col.doc(x.id).set(o.toDoc(x))))}
+    R.saveLocal();o.onChange();},()=>{})};
+  return R}
+function migJ(e){if(e&&e.cid===undefined){e.cid=(typeof e.ch==="number"&&e.ch>=0&&CH[e.p]&&CH[e.p][e.ch])?CH[e.p][e.ch][3]:null;delete e.ch}return e}
+function validJ(e){return e&&typeof e.id==="string"&&typeof e.topic==="string"&&!!CH[e.p]}
 /* ============ TOUGH TOPICS JOURNAL ============ */
 /* Quick bank: short revision cards on stable, frequently examined concepts. Verify against ICAI study material. */
 const BANK=[
@@ -553,29 +658,22 @@ const BANK=[
 ];
 const INTERVALS=[1,3,7,14,30,60];
 const JK=LS+".journal";
-let J=[]; try{J=JSON.parse(localStorage.getItem(JK)||"[]")}catch(e){}
+let J=(store.get(JK,[])||[]).filter(e=>validJ(e)&&!TOMB[e.id]).map(migJ);
 let jCol=null, jWrites={}, sampleNs=null, jGen={}, jFilter="due", jPaperF="all", jOpen=null, jDel=null, rv=null, jPrefill=null;
-function jSaveLocal(){try{localStorage.setItem(JK,JSON.stringify(J))}catch(e){}}
-function jPut(e){e.u=Date.now();const i=J.findIndex(x=>x.id===e.id);if(i<0)J.push(e);else J[i]=e;jSaveLocal();
-  if(jCol){const id=e.id,body={e:JSON.stringify(e),u:e.u};jWrites[id]=(jWrites[id]||Promise.resolve()).then(()=>jCol.doc(id).set(body)).catch(()=>{})}}
-function jRemove(id){J=J.filter(x=>x.id!==id);jSaveLocal();if(jCol){jWrites[id]=(jWrites[id]||Promise.resolve()).then(()=>jCol.doc(id).delete()).catch(()=>{})}}
+const JR=makeRecords({key:JK,list:()=>J,setList:a=>{J=a},toLocal:e=>e,
+  fromDoc:d=>{try{const r=migJ(JSON.parse(d.e));return validJ(r)?r:null}catch(e){return null}},toDoc:e=>({e:JSON.stringify(e),u:e.u}),
+  onChange:()=>{if(view==="journal"||view==="today")render()}});
+function jSaveLocal(){JR.saveLocal()}
+function jPut(e){JR.put(e)}
+function jRemove(id){JR.remove(id)}
 function initJournalSync(db,id,user){
-  jCol=db.collection("data/users/"+id+"/state/journal");let first=true;
-  jCol.onSnapshot(qs=>{
-    const ch=qs.docChanges();
-    ch.forEach(c=>{let r;try{r=JSON.parse(c.doc.data().e)}catch(err){return}
-      const i=J.findIndex(x=>x.id===r.id);
-      if(c.type==="removed"){if(i>=0&&(J[i].u||0)<=(r.u||0))J.splice(i,1)}
-      else if(i<0)J.push(r); else if((r.u||0)>(J[i].u||0))J[i]=r;});
-    if(first){first=false;const remote=new Set(qs.docs.map(d=>d.id));J.filter(x=>!remote.has(x.id)).forEach(x=>{jWrites[x.id]=Promise.resolve().then(()=>jCol.doc(x.id).set({e:JSON.stringify(x),u:x.u||Date.now()})).catch(()=>{})})}
-    jSaveLocal(); if(view==="journal"||view==="today")render();
-  },()=>{});
+  JR.attach(db.collection("data/users/"+id+"/state/journal"));
   claude.use("sample").then(s=>{sampleNs=s;if(s)s.limits().then(l=>{sampleLimits=l;if(view==="evaluate")render()}).catch(()=>{});if(view==="journal"||view==="evaluate")render()}).catch(()=>{});
 }
 function jDue(){const t=todayISO();return J.filter(e=>!e.mastered&&e.due<=t)}
-function bankFor(e){const hay=(e.topic+" "+(e.ch>=0&&CH[e.p][e.ch]?CH[e.p][e.ch][0]:"")).toLowerCase();
+function bankFor(e){const hay=(e.topic+" "+(chRow(e.cid)?chRow(e.cid)[0]:"")).toLowerCase();
   return BANK.map(b=>({b,s:b.p!==e.p?0:b.tags.reduce((a,t)=>a+(hay.includes(t)?t.length:0),0)})).filter(x=>x.s>0).sort((a,b)=>b.s-a.s).slice(0,2).map(x=>x.b)}
-function chName(e){return e.ch>=0&&CH[e.p][e.ch]?CH[e.p][e.ch][0]:"General"}
+function chName(e){return chRow(e.cid)?chRow(e.cid)[0]:"General"}
 function rate(e,r){const t=parse(todayISO());e.reviews=(e.reviews||[]).concat([{d:todayISO(),r}]);
   if(r==="forgot"){e.box=0;e.due=iso(addDays(t,1))}
   else if(r==="hard"){e.due=iso(addDays(t,Math.max(1,Math.round(INTERVALS[e.box||0]/2))))}
@@ -616,8 +714,8 @@ Give 4 questions.`;
 function journalChip(){const n=jDue().length;if(!J.length)return "";return `<div class="row"><span class="chip ${n?"warn":"A"}">${n?`${n} tough topic${n>1?"s":""} due`:"Tough topics all reviewed"}</span>${n?`<button data-act="jstart">Review now</button>`:""}</div>`}
 V.journal=()=>{
   const ps=activePapers(), due=jDue(), t=todayISO();
-  if(!jPrefill||!ps.some(p=>p.id===jPrefill.p))jPrefill={p:ps[0].id,ch:-1};
-  const fp=jPrefill.p, fch=jPrefill.ch;
+  if(!jPrefill||!ps.some(p=>p.id===jPrefill.p))jPrefill={p:ps[0].id,cid:""};
+  const fp=jPrefill.p, fcid=jPrefill.cid;
   let review="";
   if(rv){const e=J.find(x=>x.id===rv.q[rv.i]);
     if(!e){rv=null}else{const pr=reviewPrompt(e);
@@ -656,7 +754,7 @@ V.journal=()=>{
     <div class="card"><div class="label">Add a topic you find difficult</div>
       <form id="jForm" class="grid" style="grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px">
         <label class="f">Paper<select id="jP" data-act="jpaper">${ps.map(p=>`<option value="${p.id}" ${p.id===fp?"selected":""}>${p.short}</option>`).join("")}</select></label>
-        <label class="f">Chapter<select id="jCh"><option value="-1">General</option>${CH[fp].map((c,i)=>`<option value="${i}" ${i===fch?"selected":""}>${esc(c[0].length>60?c[0].slice(0,58)+"…":c[0])}</option>`).join("")}</select></label>
+        <label class="f">Chapter<select id="jCh"><option value="">General</option>${CH[fp].map(c=>`<option value="${c[3]}" ${c[3]===fcid?"selected":""}>${esc(c[0].length>60?c[0].slice(0,58)+"…":c[0])}</option>`).join("")}</select></label>
         <label class="f" style="grid-column:1/-1">Topic<input id="jT" placeholder="e.g. Sale and leaseback gain calculation" required></label>
         <label class="f">Type<select id="jK"><option>Concept</option><option>Formula / numerical</option><option>Provision / section</option><option>Mock mistake</option><option>Keeps slipping from memory</option></select></label>
         <label class="f" style="grid-column:1/-1">Why is it hard? (optional)<input id="jW" placeholder="I mix up which portion of the gain to recognise"></label>
@@ -692,30 +790,26 @@ function jClick(b){const a=b.dataset.act,id=b.dataset.id,e=id&&J.find(x=>x.id===
   if(a==="jdelyes"){jRemove(id);jDel=null;render();toast("Topic deleted");return true}
   if(a==="jfilter"){jFilter=b.dataset.f;render();return true}
   if(a==="jpf"){jPaperF=b.dataset.p;render();return true}
-  if(a==="tojournal"){jPrefill={p:b.dataset.p,ch:+b.dataset.i};location.hash="journal";setTimeout(()=>{const el=document.getElementById("jT");if(el)el.focus()},50);return true}
+  if(a==="tojournal"){jPrefill={p:b.dataset.p,cid:b.dataset.c};location.hash="journal";setTimeout(()=>{const el=document.getElementById("jT");if(el)el.focus()},50);return true}
   return false}
 
 /* ============ ANSWER SHEET EVALUATOR ============ */
 const EK=LS+".evals";
-let EV=[]; try{EV=JSON.parse(localStorage.getItem(EK)||"[]")}catch(e){}
+let EV=(store.get(EK,[])||[]).filter(e=>e&&typeof e.id==="string"&&e.result&&Array.isArray(e.result.questions)&&!TOMB[e.id]);
 let eCol=null, eWrites={}, sampleLimits=null, evRun=null, evOpen=null, evQOpen=null;
 let evFiles={qp:[],sol:[],ans:[]};
 let evForm={paper:"fr",name:"",date:"",max:100,qpText:"",solText:"",note:""};
 const PDFJS="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/";
-function evSaveLocal(){try{localStorage.setItem(EK,JSON.stringify(EV.slice(-15)))}catch(e){}}
-function evPut(e){e.u=Date.now();const i=EV.findIndex(x=>x.id===e.id);if(i<0)EV.push(e);else EV[i]=e;evSaveLocal();
-  if(eCol){const id=e.id,body={e:JSON.stringify(e),u:e.u};eWrites[id]=(eWrites[id]||Promise.resolve()).then(()=>eCol.doc(id).set(body)).catch(()=>{})}}
-function evRemove(id){EV=EV.filter(x=>x.id!==id);evSaveLocal();if(eCol){eWrites[id]=(eWrites[id]||Promise.resolve()).then(()=>eCol.doc(id).delete()).catch(()=>{})}}
-function initEvalSync(db,id){
-  eCol=db.collection("data/users/"+id+"/state/evals");let first=true;
-  eCol.onSnapshot(qs=>{
-    qs.docChanges().forEach(c=>{let r;try{r=JSON.parse(c.doc.data().e)}catch(err){return}
-      const i=EV.findIndex(x=>x.id===r.id);
-      if(c.type==="removed"){if(i>=0)EV.splice(i,1)} else if(i<0)EV.push(r); else if((r.u||0)>(EV[i].u||0))EV[i]=r;});
-    if(first){first=false;const remote=new Set(qs.docs.map(d=>d.id));EV.filter(x=>!remote.has(x.id)).forEach(x=>evPut(x))}
-    EV.sort((a,b)=>(a.created||0)-(b.created||0));evSaveLocal();if(view==="evaluate")render();
-  },()=>{});
-}
+const ER=makeRecords({key:EK,limit:30,list:()=>EV,setList:a=>{EV=a},
+  toLocal:e=>{const c=Object.assign({},e);delete c.transcript;return c},
+  fromDoc:d=>{try{const r=JSON.parse(d.e);if(typeof d.tr==="string")r.transcript=d.tr;return r&&r.result&&Array.isArray(r.result.questions)?r:null}catch(e){return null}},
+  write:(col,e)=>{const c=Object.assign({},e);delete c.transcript;const body={e:JSON.stringify(c),u:e.u};
+    return e.transcript===undefined?col.doc(e.id).update(body).catch(()=>col.doc(e.id).set(body)):col.doc(e.id).set(Object.assign(body,{tr:e.transcript}))},
+  onChange:()=>{EV.sort((a,b)=>(a.created||0)-(b.created||0));if(view==="evaluate")render()}});
+function evSaveLocal(){ER.saveLocal()}
+function evPut(e){ER.put(e)}
+function evRemove(id){ER.remove(id)}
+function initEvalSync(db,id){ER.attach(db.collection("data/users/"+id+"/state/evals"))}
 function loadScript(src){return new Promise((res,rej)=>{const s=document.createElement("script");s.src=src;s.onload=res;s.onerror=()=>rej(new Error("Couldn't load the PDF reader"));document.head.appendChild(s)})}
 async function pdfjs(){if(window.pdfjsLib)return window.pdfjsLib;await loadScript(PDFJS+"pdf.worker.min.js");await loadScript(PDFJS+"pdf.min.js");window.pdfjsLib.GlobalWorkerOptions.workerSrc=PDFJS+"pdf.worker.min.js";return window.pdfjsLib}
 function canvasBlob(c,q){return new Promise(r=>c.toBlob(b=>r(b),"image/jpeg",q))}
@@ -752,7 +846,8 @@ async function runEval(){
   if(!sampleNs){toast("Evaluation needs the Claude-hosted page");return}
   if(!evFiles.ans.length){toast("Upload your answer sheet");return}
   if(!evFiles.qp.length&&!evForm.qpText.trim()){toast("Upload or paste the question paper");return}
-  if(!sampleLimits||!sampleLimits.images){toast("Image upload to Claude isn't available here. Allow it in the page's permissions.");return}
+  if(!sampleLimits)sampleLimits=await sampleNs.limits().catch(()=>null);
+  if(!sampleLimits||!sampleLimits.images){toast("Sending images to Claude isn't available in this view. Allow it in the page's permissions, then try again.");return}
   const ctrl=new AbortController();evRun={steps:[],ctrl,err:""};const signal=ctrl.signal;render();
   try{
     const p=paperOf(evForm.paper);
@@ -786,12 +881,13 @@ ${ansT}
 Return ONLY JSON in this shape:
 {"total":number,"max":${evForm.max},"summary":"2-3 sentences on overall performance","confidence":"high|medium|low","questions":[{"q":"1(a)","max":number,"awarded":number,"status":"full|partial|weak|not_attempted","credited":["what earned marks"],"missed":["what lost marks"],"feedback":"2-3 sentences","icai_tip":"how ICAI expects this answer to be written"}],"strengths":["..."],"improvements":["top 5 specific, actionable fixes"],"presentation":"1-2 sentences","time_management":"1 sentence, e.g. unattempted or rushed answers"}
 List every question in the paper, including ones not attempted (awarded 0, status not_attempted).`;
-    const res=await sampleNs.json(prompt,{modelTier:"complex",signal,cache:false});
+    const tiers=sampleLimits.modelTiers,tier=!tiers||tiers.includes("complex")?"complex":"default";
+    const res=await sampleNs.json(prompt,{modelTier:tier,signal,cache:false});
     if(!res||!Array.isArray(res.questions))throw {code:"invalid_json"};
     const qs=res.questions.map(q=>({q:String(q.q||"?"),max:+q.max||0,awarded:Math.max(0,+q.awarded||0),status:String(q.status||"partial"),credited:(q.credited||[]).map(String),missed:(q.missed||[]).map(String),feedback:String(q.feedback||""),icai_tip:String(q.icai_tip||"")}));
-    const total=Math.min(+evForm.max,+res.total||qs.reduce((a,q)=>a+q.awarded,0));
+    const rec=evReconcile(qs,+evForm.max),total=rec.total;
     const ev={id:"e"+Date.now().toString(36),created:Date.now(),paper:evForm.paper,name:evForm.name||"Mock test",date:evForm.date||todayISO(),max:+evForm.max,hasSol:!!sol,pages:ar.pages,trimmed,
-      result:{total:Math.round(total*2)/2,summary:String(res.summary||""),confidence:String(res.confidence||"medium"),questions:qs,strengths:(res.strengths||[]).map(String),improvements:(res.improvements||[]).map(String),presentation:String(res.presentation||""),time:String(res.time_management||"")},
+      recNote:rec.note,result:{total,summary:String(res.summary||""),confidence:String(res.confidence||"medium"),questions:qs,strengths:(res.strengths||[]).map(String),improvements:(res.improvements||[]).map(String),presentation:String(res.presentation||""),time:String(res.time_management||"")},
       transcript:ar.text.slice(0,120000)};
     evPut(ev);evOpen=ev.id;evRun=null;evFiles={qp:[],sol:[],ans:[]};render();window.scrollTo(0,0);toast("Evaluation ready");
   }catch(err){const c=err&&err.code;
@@ -804,6 +900,12 @@ List every question in the paper, including ones not attempted (awarded 0, statu
       :(err&&err.message)||"Something went wrong. Try again.";
     if(evRun){evRun.steps.forEach(s=>{if(s.state==="run")s.state="err"});evRun.err=msg}render()}
 }
+/* marks never exceed a question's maximum, and the total is the sum of question marks (capped at the paper total) */
+function evReconcile(qs,formMax){qs.forEach(q=>{q.max=Math.max(0,+q.max||0);q.awarded=Math.max(0,+q.awarded||0);if(q.max>0&&q.awarded>q.max)q.awarded=q.max;q.awarded=Math.round(q.awarded*2)/2});
+  const sum=qs.reduce((a,q)=>a+q.awarded,0),maxSum=qs.reduce((a,q)=>a+q.max,0);let note="";
+  if(sum>formMax)note=`Question marks added up to ${sum}, more than the paper's ${formMax}, so the total is capped. Optional questions may have been marked twice.`;
+  else if(maxSum>0&&maxSum<formMax-0.01)note=`The questions found carry ${maxSum} marks, less than the paper's ${formMax}. Part of the question paper may be missing from the upload.`;
+  return {total:Math.round(Math.min(formMax,sum)*2)/2,note,maxSum}}
 function evStatusChip(s){return s==="full"?'<span class="chip A">full</span>':s==="partial"?'<span class="chip warn">partial</span>':s==="not_attempted"?'<span class="chip">not attempted</span>':'<span class="chip bad">weak</span>'}
 function evResult(ev){const r=ev.result,pct=ev.max?r.total/ev.max*100:0;
   return `<div class="card hero">
@@ -814,6 +916,7 @@ function evResult(ev){const r=ev.result,pct=ev.max?r.total/ev.max*100:0;
       <div class="stat"><span class="label">Confidence</span><b style="font-size:1.1rem">${esc(r.confidence)}</b><span class="small muted">${ev.hasSol?"marked against suggested answers":"no suggested answers given"}</span></div>
     </div>
     <p style="margin:0">${esc(r.summary)}</p>
+    ${ev.recNote?`<p class="small" style="margin:0;color:var(--warn)">${esc(ev.recNote)}</p>`:""}
     ${ev.trimmed?'<p class="small" style="margin:0;color:var(--warn)">Some text was trimmed to fit. Marks for the last questions may be less reliable.</p>':""}
     <div class="row">
       ${ev.savedMock?'<span class="chip A">Saved to Mocks</span>':`<button class="primary" data-act="evmock" data-id="${ev.id}">Save ${r.total}/${ev.max} to Mocks</button>`}
@@ -829,7 +932,7 @@ function evResult(ev){const r=ev.result,pct=ev.max?r.total/ev.max*100:0;
     <div class="card"><div class="label">Fix these first</div><ol class="small" style="margin:0;padding-left:1.2rem;display:grid;gap:6px">${r.improvements.map(x=>`<li>${esc(x)}</li>`).join("")}</ol>${r.time?`<p class="small" style="margin:0"><b>Time:</b> ${esc(r.time)}</p>`:""}</div>
     <div class="card"><div class="label">What went well</div><ul class="small" style="margin:0;padding-left:1.2rem;display:grid;gap:6px">${r.strengths.map(x=>`<li>${esc(x)}</li>`).join("")}</ul>${r.presentation?`<p class="small" style="margin:0"><b>Presentation:</b> ${esc(r.presentation)}</p>`:""}</div>
   </div>
-  <details class="pw"><summary>What Claude read from your answer sheet</summary><p class="small muted" style="margin:0 0 8px">Check it read your handwriting correctly. Misread figures can cost marks here that an examiner would give.</p><pre style="white-space:pre-wrap;font-family:var(--mono);font-size:.78rem;margin:0;max-height:420px;overflow:auto">${esc(ev.transcript)}</pre></details>`}
+  <details class="pw"><summary>What Claude read from your answer sheet</summary><p class="small muted" style="margin:0 0 8px">Check it read your handwriting correctly. Misread figures can cost marks here that an examiner would give.</p><pre style="white-space:pre-wrap;font-family:var(--mono);font-size:.78rem;margin:0;max-height:420px;overflow:auto">${ev.transcript?esc(ev.transcript):"The transcript is kept in your account and appears once the page has synced."}</pre></details>`}
 V.evaluate=()=>{
   const ps=activePapers();if(!ps.some(p=>p.id===evForm.paper))evForm.paper=ps[0].id;
   const open=evOpen&&EV.find(e=>e.id===evOpen);
@@ -877,7 +980,7 @@ function evClick(b){const a=b.dataset.act,id=b.dataset.id,ev=id&&EV.find(x=>x.id
   if(a==="evq"){evQOpen=evQOpen===b.dataset.k?null:b.dataset.k;render();return true}
   if(a==="evdel"){evRemove(id);if(evOpen===id)evOpen=null;render();toast("Evaluation deleted");return true}
   if(a==="evmock"&&ev){S.mocks.push({id:Date.now().toString(36),paper:ev.paper,date:ev.date,score:ev.result.total,max:ev.max,src:"Claude-evaluated · "+ev.name});ev.savedMock=true;evPut(ev);save();render();toast("Saved to Mocks");return true}
-  if(a==="evtough"&&ev){ev.result.questions.filter(q=>q.status==="partial"||q.status==="weak").forEach((q,i)=>{const miss=q.missed[0]||q.feedback;jPut({id:"j"+Date.now().toString(36)+i,p:ev.paper,ch:-1,topic:`${ev.name} Q${q.q}: ${miss.length>90?miss.slice(0,88)+"…":miss}`,kind:"Mock mistake",why:q.missed.join("; ")+(q.icai_tip?" | ICAI: "+q.icai_tip:""),created:todayISO(),box:0,due:iso(addDays(new Date(),1)),reviews:[],mastered:false,clicked:"",card:null})});ev.addedTough=true;evPut(ev);render();toast("Added to Tough topics");return true}
+  if(a==="evtough"&&ev){ev.result.questions.filter(q=>q.status==="partial"||q.status==="weak").forEach((q,i)=>{const miss=q.missed[0]||q.feedback;jPut({id:"j"+Date.now().toString(36)+i,p:ev.paper,cid:null,topic:`${ev.name} Q${q.q}: ${miss.length>90?miss.slice(0,88)+"…":miss}`,kind:"Mock mistake",why:q.missed.join("; ")+(q.icai_tip?" | ICAI: "+q.icai_tip:""),created:todayISO(),box:0,due:iso(addDays(new Date(),1)),reviews:[],mastered:false,clicked:"",card:null})});ev.addedTough=true;evPut(ev);render();toast("Added to Tough topics");return true}
   return false}
 function evChange(b){const a=b.dataset.act;
   if(a==="evfile"){evFiles[b.dataset.k].push(...Array.from(b.files||[]));render();return true}
@@ -897,13 +1000,14 @@ V.today=()=>{
     <div class="card hero">
       <div class="label">Where you are</div>
       ${cb?`<h2>${esc(cb.ph.name)}</h2><p class="muted" style="margin:0">Focus block: <b style="color:var(--fg)">${esc(cb.b.label)}</b>, ${fmtShort(cb.b.start)} to ${fmtShort(addDays(cb.b.end,-1))} (${diffDays(new Date(),cb.b.end)} days left in block)</p><p class="small muted" style="margin:0">${esc(cb.ph.desc)}</p>`
-        :daysLeft<0?`<h2>Exam date has passed</h2><p class="muted">Set your next attempt in Setup.</p>`:`<h2>Your plan starts ${fmt(S.settings.startDate)}</h2>`}
+        :examsOver()?`<h2>This exam window is over</h2><p class="muted" style="margin:0">${amOwner||!sharedExam?"Set the dates for your next attempt in Setup.":"The page owner sets the next attempt's dates in Setup."}</p>`
+        :!plan.valid?`<h2>Your plan needs a new start date</h2><p class="muted" style="margin:0">${esc(plan.issue)}</p>`:`<h2>Your plan starts ${fmt(S.settings.startDate)}</h2>`}
       <div class="row" style="gap:24px">
         <div class="stat"><span class="label">Syllabus done</span><b>${Math.round(overall()*100)}%</b></div>
         <div class="stat"><span class="label">Streak</span><b>${streak()}<span class="small muted"> days</span></b></div>
         <div class="stat"><span class="label">Study hours left</span><b>${Math.round(hoursLeft())}</b></div>
       </div>
-      ${(()=>{if(daysLeft<0)return"";const exp=expectedPct(plan),act=overall(),gap=Math.round((exp-act)*100);return gap<=2?`<div class="row"><span class="chip A">On track</span><span class="small muted">Plan expects ${Math.round(exp*100)}% by today. You're at ${Math.round(act*100)}%.</span></div>`:`<div class="row"><span class="chip ${gap>10?"bad":"warn"}">${gap}% behind plan</span><span class="small muted">Plan expects ${Math.round(exp*100)}% by today. Tick chapters in Syllabus as you finish them.</span></div>`})()}
+      ${(()=>{if(daysLeft<0||!plan.valid||parse(todayISO())<plan.start)return"";const exp=expectedPct(plan),act=overall(),gap=Math.round((exp-act)*100);return gap<=2?`<div class="row"><span class="chip A">On track</span><span class="small muted">Plan expects ${Math.round(exp*100)}% by today. You're at ${Math.round(act*100)}%.</span></div>`:`<div class="row"><span class="chip ${gap>10?"bad":"warn"}">${gap}% behind plan</span><span class="small muted">Plan expects ${Math.round(exp*100)}% by today. Tick chapters in Syllabus as you finish them.</span></div>`})()}
       <div class="row small">${activeDates().map(x=>{const d=diffDays(new Date(),parse(x.date));return `<span class="chip" title="${fmt(x.date)}"><span class="swatch" style="background:${col(x.p.id)}"></span>${x.p.short} · ${fmtShort(parse(x.date))}${d>=0?` · ${d}d`:" · done"}</span>`}).join("")}</div>
       ${myRankChip()}
       ${journalChip()}
@@ -929,8 +1033,8 @@ V.today=()=>{
     </div>
   </div>
   <div class="card">
-    <div class="row between"><div class="label">Due for revision</div><span class="small muted">Read but untouched for ${S.settings.revDays}+ days, or confidence 1–2</span></div>
-    ${due.length?`<div class="tablewrap"><table><tr><th>Paper</th><th>Chapter</th><th>Last touched</th><th class="c">Mark revised</th></tr>${due.slice(0,12).map(d=>`<tr><td><span class="chip"><span class="swatch" style="background:${col(d.p.id)}"></span>${d.p.short}</span></td><td>${esc(d.c[0])} ${d.weak?'<span class="chip bad">weak</span>':""}</td><td class="num small">${d.s.last?d.age+" days ago":"–"}</td><td class="c"><button data-act="touch" data-k="${chKey(d.p.id,d.i)}">Revised today</button></td></tr>`).join("")}</table></div>`:`<p class="muted small" style="margin:0">Nothing due. Chapters appear here once you tick Read and time passes, so nothing slips out of memory before the exam.</p>`}
+    <div class="row between"><div class="label">Due for revision</div><span class="small muted">Not revised for ${S.settings.revDays}+ days, or confidence 1–2</span></div>
+    ${due.length?`<div class="tablewrap"><table><tr><th>Paper</th><th>Chapter</th><th>Last revised</th><th class="c">Mark revised</th></tr>${due.slice(0,12).map(d=>`<tr><td><span class="chip"><span class="swatch" style="background:${col(d.p.id)}"></span>${d.p.short}</span></td><td>${esc(d.c[0])} ${d.weak?'<span class="chip bad">weak</span>':""}</td><td class="num small">${d.s.last?d.age+" days ago":"–"}</td><td class="c"><button data-act="touch" data-k="${chKey(d.p.id,d.i)}">Revised today</button></td></tr>`).join("")}</table></div>`:`<p class="muted small" style="margin:0">Nothing due. Chapters appear here once you tick Read and time passes, so nothing slips out of memory before the exam.</p>`}
   </div>`;
 };
 
@@ -951,11 +1055,11 @@ V.syllabus=()=>{
       <td class="ch-name">${esc(c[0])}${c[2]?`<small>${esc(c[2])}</small>`:""}</td>
       <td class="c"><span class="chip ${c[1]}">${c[1]}</span></td>
       ${STAGES.map(([st,l])=>`<td class="c"><input type="checkbox" class="chk" aria-label="${l}: ${esc(c[0])}" data-act="stage" data-k="${k}" data-s="${st}" ${s[st]?"checked":""}></td>`).join("")}
-      <td class="c"><span class="conf">${[1,2,3,4,5].map(n=>`<button aria-label="Confidence ${n}" class="${(s.conf||0)>=n?"on":""}" data-act="conf" data-k="${k}" data-n="${n}"></button>`).join("")}</span></td>
+      <td class="c"><span class="conf">${[1,2,3,4,5].map(n=>`<button aria-label="Confidence ${n}" aria-pressed="${(s.conf||0)>=n}" class="${(s.conf||0)>=n?"on":""}" data-act="conf" data-k="${k}" data-n="${n}"></button>`).join("")}</span></td>
       <td class="num small muted">${s.last?fmtShort(parse(s.last)):"–"}</td>
-      <td><input class="note" id="note-${k}" data-act="note" data-k="${k}" value="${esc(s.note||"")}" placeholder="weak spots, Q numbers…"> <button class="ghost small" data-act="tojournal" data-p="${curPaper}" data-i="${i}" title="Add a tough topic from this chapter">+ Tough topic</button></td></tr>`}).join("")||`<tr><td colspan="10" class="muted">No chapters match this filter.</td></tr>`}
+      <td><input class="note" id="note-${k}" data-act="note" data-k="${k}" value="${esc(s.note||"")}" placeholder="weak spots, Q numbers…"> <button class="ghost small" data-act="tojournal" data-p="${curPaper}" data-c="${k}" title="Add a tough topic from this chapter">+ Tough topic</button></td></tr>`}).join("")||`<tr><td colspan="10" class="muted">No chapters match this filter.</td></tr>`}
   </table></div>
-  <p class="small muted" style="margin:0">Priority A/B/C reflects how often a topic is commonly examined. Check it against ICAI's study material, RTPs and recent papers for your attempt. Ticking any box sets “Last” to today.</p>`;
+  <p class="small muted" style="margin:0">Priority A/B/C reflects how often a topic is commonly examined. Check it against ICAI's study material, RTPs and recent papers for your attempt. Ticking a stage records it as revised today, and ticking a later stage fills in the earlier ones. Confidence and notes leave the date unchanged.</p>`;
 };
 
 V.plan=()=>{
@@ -971,7 +1075,9 @@ V.plan=()=>{
     [addDays(E,-14),"Admit card usually available. Download it and check your photo, signature and centre."],
   ];
   const ad=activeDates();ad.forEach((x,i)=>{const gap=i?diffDays(parse(ad[i-1].date),parse(x.date)):null;ms.push([parse(x.date),`<b>${esc(x.p.short)} exam</b>${gap!=null?` · ${gap-1} revision day${gap-1===1?"":"s"} before it`:" · first paper"}`])});
+  if(!plan.valid)return `<h2>Your timeline</h2><div class="card hero"><p style="margin:0">${esc(plan.issue)}</p><div class="row"><a class="btn" href="#setup" style="text-decoration:none">Open Setup</a></div></div>`;
   return `
+  ${plan.warn?`<div class="notice warn"><span>${esc(plan.warn)}</span></div>`:""}
   <div class="row between"><h2>Your timeline</h2><span class="small muted num">${fmt(S.settings.startDate)} to ${fmt(examStart())} · ${total} days of prep</span></div>
   ${(()=>{const H=Math.round(targetSum(plan.start,addDays(plan.exam,-1)));return `<div class="card hero"><div class="row" style="gap:24px"><div class="stat"><span class="label">Total plan hours (from ${fmtShort(plan.start)})</span><b>${H} h</b></div><div class="stat"><span class="label">Studied so far</span><b>${hoursStudied().toFixed(1)} h</b></div><div class="stat"><span class="label">Hours left</span><b>${Math.round(hoursLeft())} h</b></div><div class="stat"><span class="label">Weekday / weekend</span><b>${S.settings.tWd} / ${S.settings.tWe} h</b></div></div>${H<1000?`<p class="small" style="margin:0"><span class="chip warn">Tight</span> Most rankers put in roughly 1,200–1,800 hours for both groups. Add hours on holidays and in the final 6 weeks (study leave), or move your attempt, to close the gap.</p>`:`<p class="small muted" style="margin:0">That's a solid budget. Protect it.</p>`}<p class="small muted" style="margin:0">Total counts every day from your plan start to the day before your first paper. Hours left is the total minus every hour you've logged since the plan start, so it only drops when you study.</p></div>`})()}
   <div class="card"><div class="gantt">${rows.join("")}</div><div class="legend">${activePapers().map(p=>`<span><span class="swatch" style="background:${col(p.id)}"></span>${p.short}</span>`).join("")}<span><span class="swatch" style="background:var(--bad)"></span>Today</span></div></div>
@@ -986,7 +1092,7 @@ V.plan=()=>{
   </div>`;
 };
 
-let mockForm={paper:"fr"};
+let mockForm={paper:"fr"}, mockEdit=null;
 V.mocks=()=>{
   const ps=activePapers(), tp=+S.settings.targetPct||75;
   const stats=ps.map(p=>{const m=S.mocks.filter(x=>x.paper===p.id).sort((a,b)=>a.date<b.date?-1:1);const pct=m.map(x=>x.score/x.max*100);return {p,m,avg:pct.length?pct.reduce((a,b)=>a+b,0)/pct.length:null,best:pct.length?Math.max(...pct):null,last:pct.length?pct[pct.length-1]:null}});
@@ -1005,23 +1111,24 @@ V.mocks=()=>{
   <div class="row between"><h2>Mock tests</h2><div class="row"><span class="small muted">Target for a rank: ${tp}%+ in every paper</span><a class="btn" href="#evaluate" style="text-decoration:none">Have Claude mark an answer sheet</a></div></div>
   <div class="grid g2">
     <div class="card"><div class="label">Trend</div>${chart}</div>
-    <div class="card"><div class="label">Add a score</div>
+    ${(()=>{const me=mockEdit&&S.mocks.find(m=>m.id===mockEdit),sel=me?me.paper:mockForm.paper;return `<div class="card"><div class="label">${me?"Edit score":"Add a score"}</div>
       <form id="mockForm" class="grid" style="grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px">
-        <label class="f">Paper<select id="mPaper">${ps.map(p=>`<option value="${p.id}" ${mockForm.paper===p.id?"selected":""}>${p.short}</option>`).join("")}</select></label>
-        <label class="f">Date<input type="date" id="mDate" value="${todayISO()}"></label>
-        <label class="f">Marks<input type="number" id="mScore" min="0" max="100" step="0.5" placeholder="62" required></label>
-        <label class="f">Out of<input type="number" id="mMax" value="100" min="1"></label>
-        <label class="f" style="grid-column:1/-1">Source<input id="mSrc" placeholder="ICAI MTP Series I, coaching test series, PYQ May 2025…"></label>
-        <button class="primary" style="grid-column:1/-1">Save score</button>
-      </form>
+        <label class="f">Paper<select id="mPaper">${PAPERS.filter(p=>ps.includes(p)||p.id===sel).map(p=>`<option value="${p.id}" ${sel===p.id?"selected":""}>${p.short}</option>`).join("")}</select></label>
+        <label class="f">Date<input type="date" id="mDate" value="${me?me.date:todayISO()}" max="${todayISO()}" required></label>
+        <label class="f">Marks<input type="number" id="mScore" min="0" step="0.5" placeholder="62" value="${me?me.score:""}" required></label>
+        <label class="f">Out of<input type="number" id="mMax" value="${me?me.max:100}" min="1" step="0.5" required></label>
+        <label class="f" style="grid-column:1/-1">Source<input id="mSrc" placeholder="ICAI MTP Series I, coaching test series, PYQ May 2025…" value="${me?esc(me.src||""):""}"></label>
+        <button class="primary" style="grid-column:1/-1">${me?"Update score":"Save score"}</button>
+        ${me?`<button type="button" style="grid-column:1/-1" data-act="mockcancel">Cancel editing</button>`:""}
+      </form>`})()}
       <div class="row" style="gap:24px">${groupCard(1)}${groupCard(2)}</div>
-      <p class="small muted" style="margin:0">ICAI pass rule: at least 40 in each paper and 50% aggregate per group. 60+ in a paper earns an exemption.</p>
+      <p class="small muted" style="margin:0">ICAI pass rule: at least 40 in each paper and 50% aggregate per group. 60+ in a paper earns an exemption. Group figures use each paper's latest mock.</p>
     </div>
   </div>
-  <div class="tablewrap"><table><tr><th>Paper</th><th class="c">Mocks</th><th class="c">Average</th><th class="c">Best</th><th class="c">Latest</th><th class="c">Gap to target</th></tr>
+  <div class="tablewrap"><table><tr><th>Paper</th><th class="c">Mocks</th><th class="c">Average (all)</th><th class="c">Best</th><th class="c">Latest</th><th class="c">Gap to target</th></tr>
     ${stats.map(s=>`<tr><td><span class="row" style="gap:6px"><span class="swatch" style="background:${col(s.p.id)}"></span>${s.p.short}</span></td><td class="c num">${s.m.length}</td><td class="c num">${s.avg==null?"–":s.avg.toFixed(1)}</td><td class="c num">${s.best==null?"–":s.best.toFixed(1)}</td><td class="c num">${s.last==null?"–":s.last.toFixed(1)}</td><td class="c num" style="color:${s.last==null?"inherit":s.last>=tp?"var(--good)":"var(--warn)"}">${s.last==null?"–":(s.last>=tp?"on target":"−"+(tp-s.last).toFixed(1))}</td></tr>`).join("")}
   </table></div>
-  ${S.mocks.length?`<div class="tablewrap"><table><tr><th>Date</th><th>Paper</th><th class="c">Score</th><th>Source</th><th></th></tr>${[...S.mocks].sort((a,b)=>a.date<b.date?1:-1).map(m=>`<tr><td class="num small">${fmt(m.date)}</td><td>${paperOf(m.paper).short}</td><td class="c num">${m.score}/${m.max}</td><td class="small">${esc(m.src||"")}</td><td><button class="ghost" data-act="delmock" data-id="${m.id}" aria-label="Delete mock">×</button></td></tr>`).join("")}</table></div>`:""}`;
+  ${S.mocks.length?`<div class="tablewrap"><table><tr><th>Date</th><th>Paper</th><th class="c">Score</th><th>Source</th><th></th></tr>${[...S.mocks].sort((a,b)=>a.date<b.date?1:-1).map(m=>`<tr><td class="num small">${fmt(m.date)}</td><td>${paperOf(m.paper).short}</td><td class="c num">${m.score}/${m.max}</td><td class="small">${esc(m.src||"")}</td><td><button class="ghost" data-act="editmock" data-id="${m.id}">Edit</button><button class="ghost" data-act="delmock" data-id="${m.id}" aria-label="Delete mock">×</button></td></tr>`).join("")}</table></div>`:""}`;
 };
 
 V.hours=()=>{
@@ -1043,12 +1150,13 @@ V.hours=()=>{
     <div class="card"><div class="label">Hours by paper</div>${per.map(x=>`<div class="paperline"><span class="k">${x.p.short}</span><div class="bar"><i style="width:${x.h/mx*100}%;background:${col(x.p.id)}"></i></div><span class="num small">${x.h.toFixed(0)}h</span></div>`).join("")}</div>
     <div class="card"><div class="label">Log a past day</div>
       <form id="logForm" class="grid" style="grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px">
-        <label class="f">Date<input type="date" id="lDate" value="${iso(addDays(t,-1))}"></label>
+        <label class="f">Date<input type="date" id="lDate" value="${iso(addDays(t,-1))}" max="${todayISO()}"></label>
         <label class="f">Paper<select id="lPaper">${activePapers().map(p=>`<option value="${p.id}">${p.short}</option>`).join("")}</select></label>
-        <label class="f">Hours<input type="number" id="lHrs" step="0.5" min="0" max="16" placeholder="3"></label>
-        <button class="primary" style="align-self:end">Set hours</button>
+        <label class="f">Hours<input type="number" id="lHrs" step="0.25" min="0" max="24" placeholder="3" required></label>
+        <label class="f">How<select id="lMode"><option value="add">Add to that day</option><option value="set">Replace that paper's total</option></select></label>
+        <button class="primary" style="grid-column:1/-1">Save hours</button>
       </form>
-      <p class="small muted" style="margin:0">This sets the total for that paper on that day. Use 0 to clear it.</p>
+      <p class="small muted" style="margin:0">To clear a mistake, choose "Replace" and enter 0. A day can't go over 24 hours.</p>
     </div>
   </div>`;
 };
@@ -1138,6 +1246,7 @@ V.squad=()=>{
   const vis=COLS.filter(([k])=>cl[k]!==false);
   return `
   <div class="row between"><h2>Squad</h2><span class="small muted">Ranked by ${esc(RANKS[rb]).toLowerCase()}</span></div>
+  ${S.settings.onBoard?"":`<div class="notice"><span>You're not on the board. Tick "Show me on the board at all" below to join. Only the items you tick are shared.</span></div>`}
   ${boardErr?`<div class="card"><p class="small" style="margin:0;color:var(--warn)">Your summary couldn't be posted (${esc(boardErr)}). Ask the page owner for Contributor access.</p></div>`:""}
   ${rows.length?`<div class="tablewrap"><table><tr><th class="c">#</th><th>Name</th>${vis.map(([k,l])=>`<th class="c">${l}</th>`).join("")}</tr>
     ${rows.map((r,i)=>`<tr><td class="c num">${i+1}</td><td>${esc(names[r.id]||"Someone")} ${r.id===myId?'<span class="chip A">you</span>':""}</td>${vis.map(([k])=>`<td class="c num">${C[k](r)}</td>`).join("")}</tr>`).join("")}
@@ -1193,7 +1302,85 @@ V.checklists=()=>`
   <div class="row between"><h2>Checklists</h2><span class="small muted">Rules change. Confirm eligibility and exam rules on icai.org for your attempt.</span></div>
   <div class="grid g2">${Object.entries(CHECKS).map(([title,items])=>{const done=items.filter(([k])=>S.checks[k]).length;return `<div class="card"><div class="row between"><h3>${esc(title)}</h3><span class="chip ${done===items.length?"A":""}">${done}/${items.length}</span></div><ul class="list">${items.map(([k,t])=>`<li class="${S.checks[k]?"done":""}"><label><input type="checkbox" class="chk" data-act="check" data-k="${k}" ${S.checks[k]?"checked":""}><span>${esc(t)}</span></label></li>`).join("")}</ul></div>`}).join("")}</div>`;
 
-let confirmReset=false;
+/* ============ BACKUP, RESTORE, RESET ============ */
+const BK_FORMAT="ca-final-rank-desk";
+let downloadsNs=null, bk={text:"",preview:null,err:"",withTr:true,reset:{},resetAsk:false,undoAsk:false};
+function makeBackup(withTr){return {format:BK_FORMAT,version:2,created:new Date().toISOString(),state:S,journal:J,
+  evals:EV.map(e=>{const c=Object.assign({},e);if(!withTr)delete c.transcript;return c})}}
+function readBackup(txt){let o;try{o=JSON.parse(String(txt||"").trim())}catch(e){throw new Error("That isn't backup text. Use the whole file or the whole copied text, starting with {")}
+  let state,journal=[],evals=[];
+  if(o&&o.format===BK_FORMAT){if(+o.version>2)throw new Error("This backup comes from a newer version of the app.");state=o.state;journal=o.journal||[];evals=o.evals||[]}
+  else if(isObj(o)&&isObj(o.settings)){state=Object.assign({},o);journal=Array.isArray(o.journal)?o.journal:[];delete state.journal}
+  else throw new Error("This doesn't look like a Rank Desk backup.");
+  if(!isObj(state)||!isObj(state.settings))throw new Error("The backup is missing its settings, so it can't be restored.");
+  for(const k of ["ch","log","checks","todos"])if(state[k]!=null&&!isObj(state[k]))throw new Error("Part of the backup ("+k+") is damaged.");
+  if(state.mocks!=null&&!Array.isArray(state.mocks))throw new Error("The mock list in the backup is damaged.");
+  if(!Array.isArray(journal)||!Array.isArray(evals))throw new Error("The tough topics or evaluations in the backup are damaged.");
+  state.mocks=(state.mocks||[]).filter(m=>m&&m.id&&CH[m.paper]&&isFinite(+m.score)&&+m.max>0);
+  return {state:load(state),journal:journal.filter(validJ).map(migJ),evals:evals.filter(e=>e&&typeof e.id==="string"&&e.result&&Array.isArray(e.result.questions)),created:o.created||null}}
+function backupCounts(b){return {chapters:Object.values(b.state.ch).filter(c=>c&&c.r).length,days:Object.keys(b.state.log).length,mocks:b.state.mocks.length,topics:b.journal.length,evals:b.evals.length}}
+function takeRestorePoint(reason){return store.set(LS+".restorePoint",{at:Date.now(),reason,b:makeBackup(false)})}
+function applyBackup(b,reason){takeRestorePoint(reason);
+  S=b.state;S.updatedAt=Date.now();
+  const jk=new Set(b.journal.map(e=>e.id));J.slice().forEach(e=>{if(!jk.has(e.id))jRemove(e.id)});b.journal.forEach(e=>{if(TOMB[e.id]){delete TOMB[e.id];saveTomb()}jPut(Object.assign({},e))});
+  const ek=new Set(b.evals.map(e=>e.id));EV.slice().forEach(e=>{if(!ek.has(e.id))evRemove(e.id)});b.evals.forEach(e=>{if(TOMB[e.id]){delete TOMB[e.id];saveTomb()}evPut(Object.assign({},e))});
+  save();render()}
+const RESET_PARTS=[["progress","Syllabus progress, revision history and chapter notes"],["hours","Study hours (and a running timer)"],["mocks","Mock scores"],["evals","Evaluations"],["journal","Tough topics and their review history"],["tasks","Daily tasks"],["checks","Checklists"],["settings","Settings: hours, targets, squad sharing (exam dates and plan start are kept)"]];
+function applyReset(parts){takeRestorePoint("Before erasing: "+parts.map(k=>RESET_PARTS.find(x=>x[0]===k)[1].split(/[,:(]/)[0].trim().toLowerCase()).join(", "));
+  if(parts.includes("progress"))S.ch={};
+  if(parts.includes("hours")){S.log={};timer=null;store.del(TK)}
+  if(parts.includes("mocks")){S.mocks=[];mockEdit=null}
+  if(parts.includes("tasks"))S.todos={};
+  if(parts.includes("checks"))S.checks={};
+  if(parts.includes("settings")){const keep={examDates:S.settings.examDates,startDate:S.settings.startDate};S.settings=Object.assign(freshState().settings,keep)}
+  if(parts.includes("journal"))J.slice().forEach(e=>jRemove(e.id));
+  if(parts.includes("evals"))EV.slice().forEach(e=>evRemove(e.id));
+  save();if(parts.includes("settings"))pushBoard();render()}
+function dataCard(){const rp=store.get(LS+".restorePoint",null),pv=bk.preview,c=pv&&backupCounts(pv),sel=RESET_PARTS.filter(([k])=>bk.reset[k]);
+  return `<div class="card"><div class="label">Your data</div>
+  <p class="small" style="margin:0">${dbRef?"Your data syncs to your account and is also kept on this device.":"Your data is kept on this device only. Save a backup regularly."}</p>
+  <div class="grid" style="gap:8px;border-top:1px solid var(--line);padding-top:10px"><span class="label">Back up</span>
+    <label class="row small" style="gap:6px"><input type="checkbox" class="chk" data-act="bktr" ${bk.withTr?"checked":""}> Include answer-sheet transcripts (bigger backup)</label>
+    <div class="row">${downloadsNs?`<button class="primary" data-act="bksave">Save backup file</button>`:""}<button data-act="bkcopy">Copy backup text</button></div>
+    <p class="small muted" style="margin:0">Includes syllabus progress and revision history, hours, mocks, evaluations, tough topics with review history, daily tasks, checklists and settings.</p></div>
+  <div class="grid" style="gap:8px;border-top:1px solid var(--line);padding-top:10px"><span class="label">Restore</span>
+    <label class="f">Choose a backup file<input type="file" id="bkFile" data-act="bkfile" accept="application/json,.json,text/plain"></label>
+    <textarea id="bkText" rows="3" placeholder="…or paste backup text here">${esc(bk.text.length<200000?bk.text:"")}</textarea>
+    <div class="row"><button data-act="bkcheck">Check backup</button></div>
+    ${bk.err?`<p class="small" style="margin:0;color:var(--bad)">${esc(bk.err)}</p>`:""}
+    ${pv?`<div class="confirm" style="border-color:var(--warn);display:grid;gap:8px"><span class="small"><b>Backup from ${pv.created?esc(new Date(pv.created).toLocaleString("en-IN")):"an unknown date"}</b>: ${c.chapters} chapters read, ${c.days} days of hours, ${c.mocks} mocks, ${c.topics} tough topics, ${c.evals} evaluations.</span>
+      <span class="small">Restoring replaces all your current data on every device. A restore point is saved first, so you can undo it.</span>
+      <div class="row"><button class="danger" data-act="bkapply">Restore this backup</button><button data-act="bkcancel">Cancel</button></div></div>`:""}
+  </div>
+  ${rp?`<div class="grid" style="gap:8px;border-top:1px solid var(--line);padding-top:10px"><span class="label">Restore point</span>
+    <p class="small" style="margin:0">${esc(rp.reason)} · ${esc(new Date(rp.at).toLocaleString("en-IN"))}</p>
+    ${bk.undoAsk?`<div class="confirm"><span class="small">Go back to this point? Your current data is replaced and saved as a new restore point.</span><button class="danger" data-act="undoyes">Go back</button><button data-act="undono">Cancel</button></div>`:`<div class="row"><button data-act="undoask">Undo to this restore point</button></div>`}</div>`:""}
+  <div class="grid" style="gap:8px;border-top:1px solid var(--line);padding-top:10px"><span class="label">Erase data</span>
+    <ul class="list small">${RESET_PARTS.map(([k,l])=>`<li><label><input type="checkbox" class="chk" data-act="rspart" data-k="${k}" ${bk.reset[k]?"checked":""}><span>${l}</span></label></li>`).join("")}</ul>
+    ${!sel.length?`<p class="small muted" style="margin:0">Tick what you want to erase. A restore point is saved first.</p>`
+      :bk.resetAsk?`<div class="confirm"><span class="small">Erase ${sel.length} item${sel.length>1?"s":""} now? You can undo with the restore point.</span><button class="danger" data-act="rsyes">Erase</button><button data-act="rsno">Cancel</button></div>`
+      :`<div class="row"><button class="danger" data-act="rsask">Erase selected (${sel.length})</button></div>`}
+  </div></div>`}
+async function bkClick(b){const a=b.dataset.act;
+  if(a==="bkcopy"){const txt=JSON.stringify(makeBackup(bk.withTr));const ta=document.getElementById("bkText");
+    try{await navigator.clipboard.writeText(txt);toast("Backup copied. Paste it somewhere safe.")}catch(e){bk.text=txt;render();const t2=document.getElementById("bkText");if(t2){t2.value=txt;t2.select()}toast("Select all and copy the text in the box")}return true}
+  if(a==="bksave"){try{await downloadsNs.save({filename:"ca-final-rank-desk-backup-"+todayISO()+".json",data:JSON.stringify(makeBackup(bk.withTr))});toast("Backup saved")}catch(e){if(e&&e.code!=="declined"&&e.code!=="cancelled")toast("The file couldn't be saved. Use Copy backup text instead.")}return true}
+  if(a==="bkcheck"){const ta=document.getElementById("bkText");const txt=(ta&&ta.value.trim())||bk.text;bk.text=txt;try{bk.preview=readBackup(txt);bk.err=""}catch(e){bk.preview=null;bk.err=e.message}render();return true}
+  if(a==="bkcancel"){bk.preview=null;bk.err="";render();return true}
+  if(a==="bkapply"&&bk.preview){applyBackup(bk.preview,"Before restoring a backup");bk={...bk,preview:null,text:"",err:""};render();toast("Backup restored. Undo is available in Setup.");return true}
+  if(a==="undoask"){bk.undoAsk=true;render();return true}
+  if(a==="undono"){bk.undoAsk=false;render();return true}
+  if(a==="undoyes"){const rp=store.get(LS+".restorePoint",null);bk.undoAsk=false;if(!rp){render();return true}try{applyBackup(readBackup(JSON.stringify(rp.b)),"Before undoing to an earlier restore point");toast("Restored to the earlier point")}catch(e){toast(e.message)}render();return true}
+  if(a==="rsask"){bk.resetAsk=true;render();return true}
+  if(a==="rsno"){bk.resetAsk=false;render();return true}
+  if(a==="rsyes"){const parts=RESET_PARTS.map(x=>x[0]).filter(k=>bk.reset[k]);applyReset(parts);bk.reset={};bk.resetAsk=false;render();toast("Erased. Undo is available in Setup.");return true}
+  return false}
+function bkChange(b){const a=b.dataset.act;
+  if(a==="bktr"){bk.withTr=b.checked;return true}
+  if(a==="rspart"){bk.reset[b.dataset.k]=b.checked;bk.resetAsk=false;render();return true}
+  if(a==="bkfile"){const f=b.files&&b.files[0];if(!f)return true;if(f.size>60e6){bk.err="That file is too large to be a backup.";render();return true}
+    const r=new FileReader();r.onload=()=>{bk.text=String(r.result||"");try{bk.preview=readBackup(bk.text);bk.err=""}catch(e){bk.preview=null;bk.err=e.message}render()};r.onerror=()=>{bk.err="The file couldn't be read.";render()};r.readAsText(f);return true}
+  return false}
 function examCard(){
   const locked=!!sharedExam&&!amOwner, d=examDates();
   const note=!examDoc?"These dates drive your countdown and timeline."
@@ -1217,17 +1404,12 @@ V.setup=()=>`
         <label class="f">Weekend hours (Sat–Sun)<input type="number" id="sWe" min="0" max="16" step="0.5" value="${S.settings.tWe}"></label>
         <label class="f">Revise after (days)<input type="number" id="sRev" min="5" max="60" value="${S.settings.revDays}"></label>
         <label class="f">Target % per paper<input type="number" id="sPct" min="40" max="100" value="${S.settings.targetPct}"></label>
+        <label class="row small" style="grid-column:1/-1;gap:6px"><input type="checkbox" class="chk" id="sFr" ${S.settings.frDone?"checked":""}> I've finished first reading of all papers (the plan goes straight to revision)</label>
         <button class="primary" style="grid-column:1/-1">Save settings</button>
       </form>
     </div>
     ${examCard()}
-    <div class="card"><div class="label">Backup</div>
-      <p class="small" style="margin:0">Your progress syncs to your account when you open this page signed in to Claude, and is also kept on this device. Copy a backup now and then.</p>
-      <div class="row"><button id="copyBk">Copy backup</button></div>
-      <textarea id="bkText" rows="4" placeholder="Paste a backup here to restore it"></textarea>
-      <div class="row"><button id="importBk">Restore from pasted backup</button></div>
-      ${confirmReset?`<div class="confirm"><span class="small">This erases all progress, logs, mocks and tough topics.</span><button class="danger" id="resetYes">Erase everything</button><button id="resetNo">Keep my data</button></div>`:`<div class="row"><button class="danger" id="resetAsk">Reset all data</button></div>`}
-    </div>
+    ${dataCard()}
   </div>`;
 
 /* ============ RENDER & EVENTS ============ */
@@ -1252,15 +1434,18 @@ function enter(dir,from){const m=document.getElementById("main");if(RM()){m.styl
   m.style.transition="none";m.style.transform=`translateX(${dir*(from||48)}px)`;m.style.opacity="0";void m.offsetWidth;
   m.style.transition="transform .34s cubic-bezier(.16,.84,.24,1), opacity .24s ease-out";m.style.transform="translateX(0)";m.style.opacity="1";
   setTimeout(()=>{if(!swiping){m.style.transition="";m.style.transform="";m.style.opacity=""}},360)}
+let booted=false;
 function route(){const h=location.hash.replace("#","");const prev=view;view=V[h]?h:"today";render();
+  if(!booted){booted=true;return}
   if(prev!==view){const o=ORDER(),d=Math.sign(o.indexOf(view)-o.indexOf(prev))||1;inkTo(true);if(!swiping){window.scrollTo(0,0);enter(d)}}}
 window.addEventListener("resize",()=>inkTo(false));
 /* swipe: content follows your finger, then flies out and the next section slides in */
-function inScroller(el){for(;el&&el!==document.body;el=el.parentElement){if(/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName))return true;const ox=getComputedStyle(el).overflowX;if((ox==="auto"||ox==="scroll")&&el.scrollWidth>el.clientWidth+2)return true}return false}
+function isField(el){return !!(el&&el.closest&&el.closest("input,textarea,select"))}
+function scrollerOf(el){for(;el&&el!==document.body;el=el.parentElement){const ox=getComputedStyle(el).overflowX;if((ox==="auto"||ox==="scroll")&&el.scrollWidth>el.clientWidth+2)return el}return null}
 let sw=null;
-document.addEventListener("touchstart",e=>{if(swiping||e.touches.length!==1||inScroller(e.target)){sw=null;return}const t=e.touches[0];sw={x:t.clientX,y:t.clientY,t:Date.now(),lock:null,dx:0,lx:t.clientX,lt:Date.now(),v:0}},{passive:true});
+document.addEventListener("touchstart",e=>{if(swiping||e.touches.length!==1||isField(e.target)){sw=null;return}const t=e.touches[0];sw={x:t.clientX,y:t.clientY,t:Date.now(),lock:null,dx:0,lx:t.clientX,lt:Date.now(),v:0,sc:scrollerOf(e.target)}},{passive:true});
 document.addEventListener("touchmove",e=>{if(!sw)return;const t=e.touches[0],dx=t.clientX-sw.x,dy=t.clientY-sw.y;
-  if(!sw.lock){if(Math.abs(dx)<10&&Math.abs(dy)<10)return;sw.lock=Math.abs(dx)>Math.abs(dy)*1.3?"x":"y";if(sw.lock==="x"){const m=document.getElementById("main");m.style.transition="none"}}
+  if(!sw.lock){if(Math.abs(dx)<10&&Math.abs(dy)<10)return;sw.lock=Math.abs(dx)>Math.abs(dy)*1.3?"x":"y";if(sw.lock==="x"&&sw.sc){const c=sw.sc,can=dx<0?c.scrollLeft+c.clientWidth<c.scrollWidth-2:c.scrollLeft>2;if(can){sw=null;return}}if(sw.lock==="x"){const m=document.getElementById("main");m.style.transition="none"}}
   if(sw.lock!=="x")return;const now=Date.now();sw.v=(t.clientX-sw.lx)/Math.max(1,now-sw.lt);sw.lx=t.clientX;sw.lt=now;
   const o=ORDER(),i=o.indexOf(view),edge=(dx>0&&i===0)||(dx<0&&i===o.length-1);sw.dx=dx;
   if(RM())return;const w=window.innerWidth,x=edge?dx*.25:dx;const m=document.getElementById("main");
@@ -1275,10 +1460,15 @@ document.addEventListener("touchend",e=>{if(!sw)return;const s0=sw;sw=null;if(s0
   m.style.transition=`transform ${ms}ms cubic-bezier(.4,0,.9,.6), opacity ${ms}ms`;m.style.transform=`translateX(${-dir*w*.7}px)`;m.style.opacity="0";
   setTimeout(()=>{location.hash=o[n];route();window.scrollTo(0,0);swiping=false;enter(dir,w*.35)},ms)},{passive:true});
 document.addEventListener("touchcancel",()=>{if(sw&&sw.lock==="x"&&!RM())settle();sw=null},{passive:true});
-function swipeHint(){try{if(!("ontouchstart" in window)||localStorage.getItem(LS+".swipeHint"))return;localStorage.setItem(LS+".swipeHint","1")}catch(e){return}setTimeout(()=>toast("Tip: swipe left or right to switch sections"),900)}
+function swipeHint(){if(!("ontouchstart" in window)||store.get(LS+".swipeHint",null))return;store.set(LS+".swipeHint",1);setTimeout(()=>toast("Tip: swipe left or right to switch sections"),900)}
 window.addEventListener("hashchange",route);
 let tt;function toast(m){const t=document.getElementById("toast");t.textContent=m;t.classList.add("show");clearTimeout(tt);tt=setTimeout(()=>t.classList.remove("show"),1800)}
-function touch(k){S.ch[k]=Object.assign({},S.ch[k],{last:todayISO()})}
+function touch(k,what){const c=Object.assign({},S.ch[k]);c.last=todayISO();c.hist=(Array.isArray(c.hist)?c.hist:[]).concat([{d:todayISO(),s:what||"rev"}]).slice(-40);S.ch[k]=c}
+const ORDERED=["r","r1","r2","r3"];
+function setStage(k,st,on){const c=Object.assign({},S.ch[k]);let cleared=[];
+  if(on){(ORDERED.includes(st)?ORDERED.slice(0,ORDERED.indexOf(st)+1):[st]).forEach(x=>c[x]=true);S.ch[k]=c;touch(k,st)}
+  else{c[st]=false;if(ORDERED.includes(st))ORDERED.slice(ORDERED.indexOf(st)+1).forEach(x=>{if(c[x]){c[x]=false;cleared.push(x)}});S.ch[k]=c}
+  return cleared}
 
 document.addEventListener("click",e=>{
   const b=e.target.closest("[data-act]");
@@ -1286,29 +1476,30 @@ document.addEventListener("click",e=>{
     if(jClick(b))return;
     if(a==="rankby"){S.settings.rankBy=b.dataset.k;save();render();return}
     if(evClick(b))return;
-    if(a==="hr"){const t=todayISO();S.log[t]=S.log[t]||{};S.log[t][b.dataset.p]=Math.max(0,(+S.log[t][b.dataset.p]||0)+ +b.dataset.d);save();render();return}
+    if(/^(bk|undo|rs)/.test(a)){bkClick(b);return}
+    if(a==="hr"){const capped=addHours(todayISO(),b.dataset.p,+b.dataset.d);save();render();if(capped&&+b.dataset.d>0)toast("A day can't have more than 24 hours");return}
     if(a==="deltodo"){S.todos[todayISO()].splice(+b.dataset.i,1);save();render();return}
     if(a==="touch"){touch(b.dataset.k);save();render();toast("Marked as revised today");return}
     if(a==="paper"){curPaper=b.dataset.p;render();return}
     if(a==="filter"){chFilter=b.dataset.f;render();return}
-    if(a==="conf"){const k=b.dataset.k,n=+b.dataset.n;S.ch[k]=Object.assign({},S.ch[k]);S.ch[k].conf=S.ch[k].conf===n?0:n;touch(k);save();render();return}
-    if(a==="tstart"){timer={p:document.getElementById("tPaper").value,start:Date.now()};try{localStorage.setItem(TK,JSON.stringify(timer))}catch(e){}render();return}
-    if(a==="tcancel"){timer=null;try{localStorage.removeItem(TK)}catch(e){}render();toast("Timer discarded");return}
-    if(a==="tstop"){const h=Math.min(12,(Date.now()-timer.start)/36e5),r=Math.round(h*100)/100,t=todayISO();if(r>=0.02){S.log[t]=S.log[t]||{};S.log[t][timer.p]=Math.round(((+S.log[t][timer.p]||0)+r)*100)/100}const p=paperOf(timer.p).short;timer=null;try{localStorage.removeItem(TK)}catch(e){}save();render();toast(r>=0.02?`Logged ${(r*60).toFixed(0)} min to ${p}`:"Too short to log");return}
-    if(a==="delmock"){S.mocks=S.mocks.filter(m=>m.id!==b.dataset.id);save();render();return}
+    if(a==="conf"){const k=b.dataset.k,n=+b.dataset.n;S.ch[k]=Object.assign({},S.ch[k]);S.ch[k].conf=S.ch[k].conf===n?0:n;save();render();return}
+    if(a==="tstart"){timer={p:document.getElementById("tPaper").value,start:Date.now()};store.set(TK,timer);render();return}
+    if(a==="tcancel"){timer=null;store.del(TK);render();toast("Timer discarded");return}
+    if(a==="tstop"){if(!timer)return;const now=Date.now(),cap=12*36e5,capped=now-timer.start>cap,end=capped?timer.start+cap:now,parts=splitSession(timer.start,end),tot=Object.values(parts).reduce((x,y)=>x+y,0),p=paperOf(timer.p).short;
+      if(tot>=0.02)for(const d in parts)addHours(d,timer.p,Math.round(parts[d]*100)/100);
+      timer=null;store.del(TK);save();render();
+      toast(capped?`Logged the 12-hour maximum to ${p}. If the timer was left running, correct it in Hours.`:tot>=0.02?`Logged ${Math.round(tot*60)} min to ${p}${Object.keys(parts).length>1?", split across midnight":""}`:"Too short to log");return}
+    if(a==="delmock"){S.mocks=S.mocks.filter(m=>m.id!==b.dataset.id);if(mockEdit===b.dataset.id)mockEdit=null;save();render();return}
+    if(a==="editmock"){mockEdit=b.dataset.id;render();const f=document.getElementById("mockForm");if(f)f.scrollIntoView({block:"center"});return}
+    if(a==="mockcancel"){mockEdit=null;render();return}
+    if(a==="dismissNotice"){notice("");return}
   }
-  const id=e.target.id;
-  if(id==="resetAsk"){confirmReset=true;render()}
-  if(id==="resetNo"){confirmReset=false;render()}
-  if(id==="resetYes"){const keep=S.settings;S=freshState();S.settings=keep;J.slice().forEach(e=>jRemove(e.id));confirmReset=false;save();render();toast("All progress erased")}
-  if(id==="copyBk"){const txt=JSON.stringify(Object.assign({},S,{journal:J}));const ta=document.getElementById("bkText");if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(txt).then(()=>toast("Backup copied"),()=>{ta.value=txt;ta.select();toast("Select all and copy the text")})}else{ta.value=txt;ta.select();toast("Select all and copy the text")}}
-  if(id==="importBk"){try{const o=JSON.parse(document.getElementById("bkText").value);if(!o||!o.settings)throw 0;const jj=Array.isArray(o.journal)?o.journal:null;delete o.journal;S=load(o);save();if(jj){jj.forEach(e=>jPut(e))}render();toast("Backup restored")}catch(err){toast("That text isn't a valid backup. Paste the full copied text.")}}
 });
 document.addEventListener("change",e=>{
-  const b=e.target.closest("[data-act]");if(!b)return;if(evChange(b))return;const a=b.dataset.act;
-  if(a==="stage"){const k=b.dataset.k;S.ch[k]=Object.assign({},S.ch[k],{[b.dataset.s]:b.checked});touch(k);save();render()}
+  const b=e.target.closest("[data-act]");if(!b)return;if(evChange(b))return;if(bkChange(b))return;const a=b.dataset.act;
+  if(a==="stage"){const cl=setStage(b.dataset.k,b.dataset.s,b.checked);save();render();if(cl.length)toast("Later stages were cleared too: "+cl.map(x=>STAGES.find(y=>y[0]===x)[1]).join(", "))}
   if(a==="todo"){S.todos[todayISO()][+b.dataset.i].done=b.checked;save();render()}
-  if(a==="jpaper"){const pid=b.value;jPrefill={p:pid,ch:-1};const sel=document.getElementById("jCh");if(sel)sel.innerHTML='<option value="-1">General</option>'+CH[pid].map((c,i)=>`<option value="${i}">${esc(c[0].length>60?c[0].slice(0,58)+"…":c[0])}</option>`).join("");return}
+  if(a==="jpaper"){const pid=b.value;jPrefill={p:pid,cid:""};const sel=document.getElementById("jCh");if(sel)sel.innerHTML='<option value="">General</option>'+CH[pid].map(c=>`<option value="${c[3]}">${esc(c[0].length>60?c[0].slice(0,58)+"…":c[0])}</option>`).join("");return}
   if(a==="jclick"){const e=J.find(x=>x.id===b.dataset.id);if(e){e.clicked=b.value;jPut(e)}return}
   if(a==="fill"){const dd=defaultDates(b.value);for(const k in dd){const el=document.getElementById("ex-"+k);if(el)el.value=dd[k]}return}
   if(a==="board"){S.settings.onBoard=b.checked;save();pushBoard();render();return}
@@ -1320,16 +1511,23 @@ document.addEventListener("change",e=>{
 document.addEventListener("submit",e=>{
   e.preventDefault();const f=e.target.id,v=id=>document.getElementById(id).value;
   if(f==="todoForm"){const t=v("todoIn").trim();if(!t)return;const d=todayISO();(S.todos[d]=S.todos[d]||[]).push({t,done:false});save();render();document.getElementById("todoIn").focus()}
-  if(f==="mockForm"){const sc=parseFloat(v("mScore")),mx=parseFloat(v("mMax"))||100;if(isNaN(sc)||sc<0||sc>mx){toast("Enter marks between 0 and "+mx);return}mockForm.paper=v("mPaper");S.mocks.push({id:Date.now().toString(36),paper:v("mPaper"),date:v("mDate")||todayISO(),score:sc,max:mx,src:v("mSrc").trim()});save();render();toast("Score saved")}
-  if(f==="logForm"){const d=v("lDate"),h=parseFloat(v("lHrs"));if(!d||isNaN(h)){toast("Pick a date and enter hours");return}S.log[d]=S.log[d]||{};S.log[d][v("lPaper")]=h;save();render();toast("Hours updated")}
-  if(f==="jForm"){const t=v("jT").trim();if(!t){toast("Enter the topic");return}const e={id:"j"+Date.now().toString(36),p:v("jP"),ch:+v("jCh"),topic:t,kind:v("jK"),why:v("jW").trim(),created:todayISO(),box:0,due:iso(addDays(new Date(),1)),reviews:[],mastered:false,clicked:"",card:null};jPrefill={p:e.p,ch:-1};jPut(e);jOpen=e.id;jFilter="active";render();toast("Added. First review tomorrow.");return}
+  if(f==="mockForm"){const sc=parseFloat(v("mScore")),mx=parseFloat(v("mMax")),d=v("mDate");
+    if(!(mx>0)){toast("Enter the total marks for this mock");return}if(isNaN(sc)||sc<0||sc>mx){toast("Enter marks between 0 and "+mx);return}if(!d||d>todayISO()){toast("Pick the date you wrote it (not a future date)");return}
+    const rec={paper:v("mPaper"),date:d,score:sc,max:mx,src:v("mSrc").trim()};mockForm.paper=rec.paper;
+    const ex=mockEdit&&S.mocks.find(m=>m.id===mockEdit);if(ex){Object.assign(ex,rec);mockEdit=null;toast("Score updated")}else{S.mocks.push(Object.assign({id:"m"+Date.now().toString(36)+Math.random().toString(36).slice(2,5)},rec));toast("Score saved")}
+    save();render();return}
+  if(f==="logForm"){const d=v("lDate"),h=parseFloat(v("lHrs"));if(!d||isNaN(h)||h<0){toast("Pick a date and enter hours");return}if(d>todayISO()){toast("Hours can't be logged for a future date");return}const capped=addHours(d,v("lPaper"),h,v("lMode"));save();render();toast(capped?"Saved, capped so the day stays within 24 hours":"Hours saved")}
+  if(f==="jForm"){const t=v("jT").trim();if(!t){toast("Enter the topic");return}const e={id:"j"+Date.now().toString(36),p:v("jP"),cid:v("jCh")||null,topic:t,kind:v("jK"),why:v("jW").trim(),created:todayISO(),box:0,due:iso(addDays(new Date(),1)),reviews:[],mastered:false,clicked:"",card:null};jPrefill={p:e.p,cid:""};jPut(e);jOpen=e.id;jFilter="active";render();toast("Added. First review tomorrow.");return}
   if(f==="examForm"){const dd={};for(const p of PAPERS){const x=v("ex-"+p.id);if(!x){toast("Enter a date for "+p.short);return}dd[p.id]=x}
+    const ds=Object.values(dd).sort();if(diffDays(parse(ds[0]),parse(ds[ds.length-1]))>31){toast("All papers should fall within one exam window (31 days)");return}
     S.settings.examDates=dd;save();
-    if(examDoc&&amOwner){examDoc.set({dates:dd,t:Date.now()}).then(()=>toast("Exam schedule saved for everyone"),()=>toast("Saved for you only. Shared save failed."))}else toast("Exam schedule saved");
+    const warnStart=S.settings.startDate>=ds[0]?" Your plan start date is now after the first paper, so update it below.":"";
+    if(examDoc&&amOwner){examDoc.set({dates:dd,t:Date.now()}).then(()=>toast("Exam schedule saved for everyone."+warnStart),()=>toast("Saved for you only. The shared save failed."))}else toast("Exam schedule saved."+warnStart);
     render();return}
-  if(f==="setForm"){const st=v("sStart"),ex=examStart();if(!st||st>=ex){toast("Start date must be before your first paper ("+fmt(ex)+")");return}Object.assign(S.settings,{startDate:st,groups:v("sGroups"),tWd:+v("sWd")||0,tWe:+v("sWe")||0,revDays:+v("sRev")||21,targetPct:+v("sPct")||75});save();render();toast("Settings saved")}
+  if(f==="setForm"){const st=v("sStart"),ex=examStart();if(!st||st>=ex){toast("Start date must be before your first paper ("+fmt(ex)+")");return}Object.assign(S.settings,{startDate:st,frDone:document.getElementById("sFr").checked,groups:v("sGroups"),tWd:+v("sWd")||0,tWe:+v("sWe")||0,revDays:+v("sRev")||21,targetPct:+v("sPct")||75});save();render();toast("Settings saved")}
 });
 
+if(window.claude&&claude.use)claude.use("downloads").then(d=>{downloadsNs=d;if(d&&view==="setup")render()}).catch(()=>{});
 route();
 inkTo(false);if(document.fonts&&document.fonts.ready)document.fonts.ready.then(()=>inkTo(false));
 initSync();
