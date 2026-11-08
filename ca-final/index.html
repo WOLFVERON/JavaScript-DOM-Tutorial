@@ -12,8 +12,8 @@
 :root{
   --bg:#f3f6f4; --surface:#ffffff; --sunk:#e8eeea; --line:#d3ddd7; --fg:#15211c; --muted:#5b6b64;
   --accent:#0d6b55; --accent-soft:#d6ece4; --accent-fg:#ffffff;
-  --good:#1f8a4c; --warn:#b26b00; --bad:#b3261e;
-  --p1:#0d6b55; --p2:#2f5fb3; --p3:#8a4fbf; --p4:#c0562a; --p5:#b08900; --p6:#3b8c9c;
+  --good:#17703d; --warn:#8a5200; --bad:#b3261e; --on-paper:#ffffff;
+  --p1:#0d6b55; --p2:#2f5fb3; --p3:#8a4fbf; --p4:#b84f24; --p5:#8a6b00; --p6:#2c7480;
   --h0:#e3e9e5; --h1:#b9dccd; --h2:#7fbfa5; --h3:#3c9a78; --h4:#0d6b55;
   --display:"Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
   --body:"IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
@@ -23,13 +23,13 @@
   --bg:#0e1412; --surface:#151d1a; --sunk:#1c2622; --line:#2a3833; --fg:#e4ece8; --muted:#93a59d;
   --accent:#4cc39c; --accent-soft:#183a30; --accent-fg:#06150f;
   --good:#5ccf8a; --warn:#e3a33b; --bad:#f07167;
-  --p1:#4cc39c; --p2:#7aa5f0; --p3:#c193ec; --p4:#f08a5d; --p5:#e2c04a; --p6:#6cc6d6;
+  --p1:#4cc39c; --p2:#7aa5f0; --p3:#c193ec; --p4:#f08a5d; --p5:#e2c04a; --p6:#6cc6d6; --on-paper:#06150f;
   --h0:#1c2622; --h1:#1d4436; --h2:#22684f; --h3:#2f9470; --h4:#4cc39c; color-scheme:dark}}
 :root[data-theme="dark"]{
   --bg:#0e1412; --surface:#151d1a; --sunk:#1c2622; --line:#2a3833; --fg:#e4ece8; --muted:#93a59d;
   --accent:#4cc39c; --accent-soft:#183a30; --accent-fg:#06150f;
   --good:#5ccf8a; --warn:#e3a33b; --bad:#f07167;
-  --p1:#4cc39c; --p2:#7aa5f0; --p3:#c193ec; --p4:#f08a5d; --p5:#e2c04a; --p6:#6cc6d6;
+  --p1:#4cc39c; --p2:#7aa5f0; --p3:#c193ec; --p4:#f08a5d; --p5:#e2c04a; --p6:#6cc6d6; --on-paper:#06150f;
   --h0:#1c2622; --h1:#1d4436; --h2:#22684f; --h3:#2f9470; --h4:#4cc39c; color-scheme:dark}
 *{box-sizing:border-box}
 body{background:var(--bg);color:var(--fg);font-family:var(--body);font-size:15px;line-height:1.5;margin:0}
@@ -109,7 +109,7 @@ td.c,th.c{text-align:center}
 .gantt{display:grid;gap:6px}
 .grow{display:grid;grid-template-columns:9rem 1fr;gap:10px;align-items:center}
 .gtrack{position:relative;height:26px;background:var(--sunk);border-radius:6px}
-.gseg{position:absolute;top:0;bottom:0;border-radius:6px;display:flex;align-items:center;padding:0 6px;font-size:.7rem;font-weight:600;color:#fff;overflow:hidden;white-space:nowrap}
+.gseg{position:absolute;top:0;bottom:0;border-radius:6px;display:flex;align-items:center;padding:0 6px;font-size:.7rem;font-weight:600;color:var(--on-paper);overflow:hidden;white-space:nowrap}
 .gnow{position:absolute;top:-4px;bottom:-4px;width:2px;background:var(--bad)}
 .phase{border-left:3px solid var(--accent);padding-left:12px;display:grid;gap:4px}
 .phase.cur{border-left-color:var(--bad)}
@@ -133,6 +133,15 @@ svg text{fill:var(--muted);font-family:var(--mono);font-size:10px}
 .legend span{display:inline-flex;align-items:center;gap:5px}
 @media (max-width:560px){.paperline{grid-template-columns:4.5rem 1fr 2.8rem}.grow{grid-template-columns:5.5rem 1fr}.count b{font-size:1.25rem}}
 html{overflow-x:hidden}
+.loop{display:grid;grid-template-columns:repeat(8,minmax(0,1fr));gap:8px}
+@media (max-width:1100px){.loop{grid-template-columns:repeat(4,minmax(0,1fr))}}
+@media (max-width:520px){.loop{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.step{display:grid;gap:2px;align-content:start;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface);text-decoration:none;color:inherit;position:relative;min-width:0}
+.step:hover{border-color:var(--accent)}
+.step.todo{border-color:var(--warn)}
+.step .n{font-family:var(--mono);font-size:.68rem;color:var(--muted)}
+.step b{font-family:var(--mono);font-size:1.15rem;line-height:1.2}
+.step .sub{font-size:.72rem;color:var(--muted);line-height:1.3}
 .lossrow{display:grid;grid-template-columns:minmax(0,1fr) 4.5rem;gap:2px 10px;align-items:center;font-size:.84rem}
 .lossrow .mini{grid-column:1/-1;height:7px}
 .lossrow .num{text-align:right}
@@ -178,7 +187,7 @@ nav.tabs{position:relative}
         <span class="sync"><span class="dot" id="syncDot"></span><span id="syncText">Saved on this device</span></span>
       </div>
     </div>
-    <nav class="tabs" id="tabs">
+    <nav class="tabs" id="tabs" aria-label="Sections">
       <a href="#today" data-v="today">Today</a>
       <a href="#syllabus" data-v="syllabus">Syllabus</a>
       <a href="#journal" data-v="journal">Tough topics</a>
@@ -1468,8 +1477,9 @@ function priorities(opts){opts=opts||{};
   const ev=doneEvals().reverse().find(e=>!e.addedTough&&e.result.questions.some(q=>q.status==="partial"||q.status==="weak"));
   if(ev){const lost=ev.result.questions.reduce((a,q)=>a+Math.max(0,q.max-q.awarded),0);c.push({score:82,paper:ev.paper,kind:"Correct",t:`Go through the weak answers in ${ev.name}`,mins:30,why:`Your evaluation shows ${Math.round(lost)} marks lost and those answers aren't in Tough topics yet.`,gain:"Fixing known mistakes is the cheapest way to recover marks.",go:"evaluate"})}
   ps.forEach(p=>{const per=readinessPerChapter(p.id,"revision");CH[p.id].forEach(r=>{const s=S.ch[r[3]]||{};if(!s.r)return;const age=s.last?diffDays(parse(s.last),tt):999,weak=s.conf&&s.conf<=2;
-    if(age>=rd||weak)c.push({score:60+(PRI_W[r[1]]||1)*6+Math.min(Math.max(0,age-rd),30)/2+(weak?8:0)+(focus.includes(p.id)?3:0),paper:p.id,cid:r[3],kind:"Revise",t:`Revise ${r[0]}`,mins:DUR.revise[r[1]],
-      why:weak?`You rated your confidence ${s.conf}/5${age<999?`, last revised ${age} days ago`:""}.`:`Last revised ${age<999?age+" days ago":"a long time ago"}; your limit is ${rd} days.`,
+    const cr=chapterReadiness(r[3]),hurt=(cr.lost>=4||cr.tt>0)&&age>=3;
+    if(age>=rd||weak||hurt)c.push({score:60+(PRI_W[r[1]]||1)*6+Math.min(Math.max(0,age-rd),30)/2+(weak?8:0)+(focus.includes(p.id)?3:0)+Math.min(10,cr.lost)+Math.min(8,cr.tt*4),paper:p.id,cid:r[3],kind:"Revise",t:`Revise ${r[0]}`,mins:DUR.revise[r[1]],
+      why:[cr.lost?`${cr.lost} marks lost on it in recent mocks`:"",cr.tt?`${cr.tt} open tough topic${cr.tt>1?"s":""}`:"",weak?`confidence ${s.conf}/5`:"",age>=rd&&age<999?`last revised ${age} days ago (limit ${rd})`:age>=999?"never revised":""].filter(Boolean).join("; ").replace(/^./,c0=>c0.toUpperCase())+".",
       gain:r[1]==="A"?"Priority-A topics are examined often. Fresh recall protects those marks.":`Brings it back before it fades and lifts ${p.short} revision freshness.`})})});
   if(phase===1)focus.forEach(pid=>{const r=CH[pid].filter(r=>!(S.ch[r[3]]||{}).r).sort((a,b)=>(PRI_W[b[1]]||1)-(PRI_W[a[1]]||1))[0];if(!r)return;const g=readinessPerChapter(pid,"coverage")(r);
     c.push({score:70+(PRI_W[r[1]]||1)*3,paper:pid,cid:r[3],kind:"Learn",t:`Read ${r[0]}`,mins:DUR.learn[r[1]],why:cb?`${paperOf(pid).short} is in your focus block (${cb.b.label}) and this ${r[1]==="A"?"priority-A ":""}chapter isn't read yet.`:`It's the highest-priority unread ${paperOf(pid).short} chapter.`,gain:`Adds about ${g} points to ${paperOf(pid).short} readiness (coverage).`})});
@@ -1541,8 +1551,10 @@ function carryCandidates(){const t=todayISO(),oldest=iso(addDays(new Date(),-CAR
       t:cont&&x.kind==="Learn"?x.t.replace(/^Read /,"Continue reading "):x.t,
       why:`Carried over from ${fmtShort(parse(d))}${cont?", continuing where you stopped":""}. ${x.why||""}`.trim()})})});
   return {list:Object.values(map),expired}}
+function planSig(){return [Math.round(dayTarget(new Date())*60),S.settings.groups,S.settings.startDate,examStart(),S.settings.frDone?1:0].join("|")}
 function ensurePlan(force){const d=todayISO();if(!isObj(S.plan))S.plan={};const ex=S.plan[d];
-  if(ex&&!force)return ex;
+  const untouched=ex&&ex.tasks.every(x=>x.status==="todo"&&!(x.doneMins>0));
+  if(ex&&!force&&!(untouched&&ex.sig&&ex.sig!==planSig()))return ex;
   Object.keys(S.plan).forEach(k=>{if(k<d)(S.plan[k].tasks||[]).forEach(x=>{if(x.movedTo===d){delete x.carried;delete x.movedTo}})});
   const keep=ex?ex.tasks.filter(x=>x.status!=="todo"||(x.doneMins||0)>0):[];
   const target=Math.round(dayTarget(new Date())*60),used=keep.filter(x=>x.status!=="skipped"&&x.status!=="deferred").reduce((a,x)=>a+x.mins,0);
@@ -1552,7 +1564,7 @@ function ensurePlan(force){const d=todayISO();if(!isObj(S.plan))S.plan={};const 
   const tasks=keep.concat(P.list.map((x,i)=>({id:"t"+stamp+i,kind:x.kind,paper:x.paper||null,cid:x.cid||null,t:x.t,mins:x.mins,full:x.full||x.mins,part:!!x.part,
     score:Math.round(x.score),level:x.level,why:x.why||"",gain:x.gain||"",go:x.go||null,status:"todo",doneMins:0,carry:!!x.carry,from:x.from||null})));
   P.list.forEach(x=>{if(x.srcId&&S.plan[x.from]){const src=S.plan[x.from].tasks.find(y=>y.id===x.srcId);if(src){src.carried=true;src.movedTo=d}}});
-  S.plan[d]={created:Date.now(),target,tasks,expired:cc.expired};
+  S.plan[d]={created:Date.now(),target,tasks,expired:cc.expired,sig:planSig()};
   return S.plan[d]}
 function planTask(id){const p=S.plan&&S.plan[todayISO()];return p?p.tasks.find(x=>x.id===id):null}
 /* finishing a task updates the matching record elsewhere */
@@ -1565,6 +1577,23 @@ function completeTask(x){x.status="done";let msg="Done";
   return msg}
 function backlogInfo(){const T=(S.plan&&S.plan[todayISO()]||{tasks:[]}).tasks,inPlan=new Set(T.map(planKey)),bl=carryCandidates().list.filter(x=>!inPlan.has(planKey(x)));
   return {n:bl.length,mins:bl.reduce((a,x)=>a+x.mins,0)}}
+
+/* the preparation loop: where each step stands and where to go next */
+function loopSteps(){const ps=activePapers(),t=parse(todayISO()),rd=+S.settings.revDays||21;let unread=0,noQ=0,overdue=0;
+  ps.forEach(p=>CH[p.id].forEach(r=>{const c=S.ch[r[3]]||{};if(!c.r)unread++;else{if(!c.q)noQ++;if(!c.last||diffDays(parse(c.last),t)>=rd)overdue++}}));
+  const allM=mocksIn("all"),last=allM[allM.length-1],since=last?diffDays(parse(last.date),t):null,drafts=EV.filter(e=>e.draft).length,unevald=doneEvals().filter(e=>!e.savedMock).length;
+  const uncl=allM.slice(-6).reduce((a,m)=>a+(m.mistakes||[]).filter(x=>x.cat==="unclassified").length,0),sugg=tsSuggestions().length,due=jDue().length;
+  const F=ps.map(p=>forecast(p.id)),now=F.length?Math.round(F.reduce((a,f)=>a+f.now,0)/F.length):0,pace=F.length?Math.round(F.reduce((a,f)=>a+f.pace,0)/F.length):0;
+  return [
+    {k:"Learn",v:unread,sub:unread?"chapters still to read":"syllabus read once",go:"syllabus",todo:unread>0},
+    {k:"Practise",v:noQ,sub:noQ?"read, no questions yet":"questions practised",go:"syllabus",todo:noQ>0},
+    {k:"Revise",v:overdue,sub:overdue?"revisions overdue":"revisions fresh",go:"today",todo:overdue>0,act:"gotodue"},
+    {k:"Mock",v:since==null?"–":since+"d",sub:since==null?"no mock yet":"since your last mock",go:"mocks",todo:since==null||since>=14},
+    {k:"Evaluate",v:drafts||unevald,sub:drafts?"waiting for your check":unevald?"evaluations not saved to Mocks":"all evaluations handled",go:"evaluate",todo:drafts+unevald>0},
+    {k:"Mistakes",v:uncl+sugg,sub:uncl?"mistakes to classify":sugg?"suggested tough topics":"all sorted",go:uncl?"mocks":"journal",todo:uncl+sugg>0},
+    {k:"Correct",v:due,sub:due?"tough topics due":"nothing due",go:"journal",todo:due>0},
+    {k:"Reassess",v:now+"→"+pace,sub:"readiness now → at exam",go:"analytics",todo:false}]}
+function loopStrip(){const L=loopSteps();return `<div class="loop" aria-label="Preparation loop">${L.map((x,i)=>`<a class="step ${x.todo?"todo":""}" href="#${x.go}" ${x.act?`data-act="${x.act}"`:""}><span class="n">${i+1} · ${x.k}</span><b>${x.v}</b><span class="sub">${x.sub}</span></a>`).join("")}</div>`}
 
 /* ============ COMMAND CENTRE (Today) ============ */
 let warnAll=false, readyOpen=null;
@@ -1745,6 +1774,7 @@ V.today=()=>{
   const O=overviewStats(),PL=ensurePlan(),Wn=warnings();
   return `
   ${commandStrip(O)}
+  ${loopStrip()}
   <div class="grid g2">${planCard(PL)}${warningsCard(Wn)}</div>
   ${readinessCard(O.R)}
   <div class="grid g2">
@@ -2299,7 +2329,7 @@ function renderNow(){
   const np=nextPaper(),dl=np?diffDays(new Date(),parse(np.date)):0;
   document.getElementById("daysLeft").textContent=dl>=0?dl:"0";document.getElementById("daysLbl").textContent=np?"days to "+np.p.short:"exams done";
   tag.textContent=`Exams ${fmtShort(parse(examStart()))} – ${fmt(examEnd())} · ${S.settings.groups==="both"?"both groups":"Group "+(S.settings.groups==="1"?"I":"II")}`;
-  document.querySelectorAll("#tabs a").forEach(a=>a.classList.toggle("on",a.dataset.v===view));
+  document.querySelectorAll("#tabs a").forEach(a=>{const on=a.dataset.v===view;a.classList.toggle("on",on);if(on)a.setAttribute("aria-current","page");else a.removeAttribute("aria-current")});
   const active=document.activeElement, aid=active&&active.id, pos=active&&active.selectionStart;
   document.getElementById("main").innerHTML=`<section class="view">${V[view]()}</section>`;
   if(aid){const el=document.getElementById(aid);if(el){el.focus();try{el.setSelectionRange(pos,pos)}catch(e){}}}

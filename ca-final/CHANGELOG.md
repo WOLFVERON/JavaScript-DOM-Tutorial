@@ -1,5 +1,24 @@
 # CA Final Rank Desk: changelog
 
+## Phase 8: Design, UX and final integration (no data format change)
+
+Restore point: `archive/app-v8-pre-phase8.html`.
+
+- **Accessibility and contrast**: an automated audit of every tab in light and dark mode found text below WCAG AA.
+  Warning and success colours were darkened slightly in light mode; timeline bars now use a text colour that
+  contrasts with each paper colour (dark text on light bars in dark mode, which was as low as 1.8:1); two paper
+  colours were deepened. The active tab is announced to screen readers (aria-current); the tab bar is labelled.
+- **Preparation loop on Today**: Learn → Practise → Revise → Mock → Evaluate → Mistakes → Correct → Reassess, each
+  with a live count, highlighted when it has pending work, and linking to where you act.
+- **Weak chapters drive revision**: chapters with recent mock losses or open tough topics now get Revise tasks
+  (even if revised recently) and a higher priority, with the reason shown.
+- **Plan follows your settings**: if today's plan hasn't been started, it rebuilds itself when daily hours,
+  groups, plan start, exam dates or the first-reading setting change. Once you act on it, it stays (Rebuild is manual).
+- **Final QA** (`tests/phase8.test.js`, 23 checks): the full loop end to end; plan rebuild; upgrade from the
+  original data format through every version; empty states on every tab in light/dark and phone/desktop;
+  WCAG AA contrast on every tab with realistic data in both themes; accessible names; current tab; visible
+  keyboard focus; every tab renders in under 150 ms with realistic data.
+
 ## Phase 7: AIR performance analytics and readiness forecasting (no data format change)
 
 Restore point: `archive/app-v7-pre-phase7.html`.
