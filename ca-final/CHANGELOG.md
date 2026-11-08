@@ -1,5 +1,27 @@
 # CA Final Rank Desk: changelog
 
+## Phase 7: AIR performance analytics and readiness forecasting (no data format change)
+
+Restore point: `archive/app-v7-pre-phase7.html`.
+
+- **New Analytics tab** (after Evaluate). Tiles: mock average (last 3) with the average of each paper's own
+  trend, readiness now, readiness at the exam at recent pace (and if you follow the plan), revision consistency
+  (days with revision activity in 4 weeks), revision freshness, recall accuracy (4 weeks), questions solved
+  unaided (60 days), recoverable marks on the latest mocks.
+- **Insights** with evidence and links: papers needing attention (behind plan, low or falling mocks, stalled),
+  chapters losing marks across mocks, recurring mistakes and the biggest mistake type, improving papers
+  (mock trend and coverage), where marks can be recovered, and whether first-reading pace leaves time to revise.
+- **Readiness forecast** per paper at its exam date, on the same six-part model: coverage, revision depth and
+  question practice continue at the last 28 days' pace (rebuilt from chapter revision history); mocks project
+  the last-three average plus half the recent per-mock improvement, one mock per fortnight; weak-topic rate,
+  consistency and freshness held. A "follow the plan" scenario shows full coverage, revisions, practice and
+  target hours. Assumptions and per-paper rates are shown; no marks or rank predictions.
+- **Paper performance table** (readiness, coverage, revision, questions, last-3 mocks, trend, main mistake
+  type, recoverable), **chapter readiness** for each paper (read 30, revision 25, questions 15, confidence 10,
+  clean record 20), **loss concentration** in the top 3 chapters, 8-week study and revision bars, all-paper
+  mock trend. The Readiness tile on Today now opens Analytics.
+- `tests/phase7.test.js`: 30 checks. Phase 2 priority tests no longer depend on the day of the week.
+
 ## Phase 6: Advanced AI answer-sheet evaluator (no data format change; evaluations gain fields)
 
 Restore point: `archive/app-v6-pre-phase6.html`.

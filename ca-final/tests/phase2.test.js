@@ -90,7 +90,7 @@ async function open(b, st, journal, hash = 'today', vp = {width: 1280, height: 9
   {
     const ch = {}; for (let i = 0; i < 8; i++) ch['fr-' + i] = {r: true, conf: i < 3 ? 2 : 4, last: ymd(-30), hist: []};
     const j = [{id: 'd1', p: 'fr', topic: 'A', reviews: [], mastered: false, due: ymd(0), box: 0}, {id: 'd2', p: 'audit', topic: 'B', reviews: [], mastered: false, due: ymd(-2), box: 0}];
-    const p = await open(b, state({ch, settings: {startDate: ymd(-20)}}), j);
+    const p = await open(b, state({ch, settings: {startDate: ymd(-20), tWe: 2.5}}), j);
     const P = await p.evaluate(() => priorities());
     const kinds = P.list.map(x => x.kind);
     ok('priorities: weekday plan adds up to the 2.5 h target', P.mins === 150 && P.target === 150 && P.list.length >= 2 && P.list.length <= 5, {mins: P.mins, n: P.list.length});
@@ -103,9 +103,9 @@ async function open(b, st, journal, hash = 'today', vp = {width: 1280, height: 9
     ok('priorities: shown on Today as the day plan (same tasks)', shown.length === P.list.length && shown.every((t, i) => t === P.list[i].t), {shown, p: P.list.map(x => x.t)});
     const mock = await p.evaluate(() => { S.ch = {}; for (let i = 0; i < 18; i++) S.ch['fr-' + i] = {r: true, last: todayISO(), hist: []}; J.length = 0; S.settings.tWd = 8; S.settings.tWe = 8; return priorities().list.map(x => x.kind + ':' + x.t) });
     ok('priorities: suggests a mock when a paper is well covered but has none', mock.some(x => /^Mock:Write a full FR mock/.test(x)), mock);
-    const wk = await p.evaluate(() => { S.settings.tWd = 8; S.settings.tWe = 8; const r = priorities(); S.settings.tWd = 2.5; S.settings.tWe = 8; return {mins: r.mins, n: r.list.length} });
+    const wk = await p.evaluate(() => { S.settings.tWd = 8; S.settings.tWe = 8; const r = priorities(); S.settings.tWd = 2.5; S.settings.tWe = 2.5; return {mins: r.mins, n: r.list.length} });
     ok('priorities: 8-hour day plan adds up to 8 h with more tasks', wk.mins === 480 && wk.n >= 4 && wk.n <= 7, wk);
-    const off = await p.evaluate(() => { J.push({id: 'z', p: 'fr', topic: 'Z', reviews: [], mastered: false, due: todayISO(), box: 0}); S.settings.tWd = 0; S.settings.tWe = 0; const r = priorities(); S.settings.tWd = 2.5; S.settings.tWe = 8; J.pop(); return r.list.map(x => x.kind) });
+    const off = await p.evaluate(() => { J.push({id: 'z', p: 'fr', topic: 'Z', reviews: [], mastered: false, due: todayISO(), box: 0}); S.settings.tWd = 0; S.settings.tWe = 0; const r = priorities(); S.settings.tWd = 2.5; S.settings.tWe = 2.5; J.pop(); return r.list.map(x => x.kind) });
     ok('priorities: on a 0-hour day only due reviews are suggested', off.length === 1 && off[0] === 'Review', off);
     const fresh = await p.evaluate(() => { S.ch = {}; J.length = 0; S.settings.tWd = 8; S.settings.tWe = 8; const r = priorities(); return {mins: r.mins, kinds: r.list.map(x => x.kind)} });
     ok('priorities: brand-new user still gets a full day of reading, no practice on unread papers', fresh.mins === 480 && fresh.kinds.every(k => k === 'Learn'), fresh);

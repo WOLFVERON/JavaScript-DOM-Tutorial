@@ -180,6 +180,7 @@ nav.tabs{position:relative}
       <a href="#plan" data-v="plan">Timeline</a>
       <a href="#mocks" data-v="mocks">Mocks</a>
       <a href="#evaluate" data-v="evaluate">Evaluate</a>
+      <a href="#analytics" data-v="analytics">Analytics</a>
       <a href="#hours" data-v="hours">Hours</a>
       <a href="#squad" data-v="squad">Squad</a>
       <a href="#playbook" data-v="playbook">AIR playbook</a>
@@ -1565,7 +1566,7 @@ let warnAll=false, readyOpen=null;
 function commandStrip(O){const pc=v=>Math.round(v*100)+"%",[bd]=readinessBand(O.ready);
   const tile=(href,label,val,sub)=>`<a class="tile" href="#${href}"><span class="label">${label}</span><b>${val}</b><span class="sub">${sub}</span></a>`;
   return `<div class="tiles" aria-label="Preparation overview">
-    ${tile("today","Readiness",O.ready+"<span class=\"small muted\"> /100</span>",bd+" · average of papers")}
+    ${tile("analytics","Readiness",O.ready+"<span class=\"small muted\"> /100</span>",bd+" · average of papers")}
     ${tile("syllabus","Syllabus done",pc(O.syl),O.exp==null?"plan not started":"plan expects "+pc(O.exp))}
     ${tile("hours","This week",O.wk.toFixed(1)+"<span class=\"small muted\"> h</span>","target "+O.wkT+" h")}
     ${tile("hours","Total studied",Math.round(O.total)+"<span class=\"small muted\"> h</span>","all time")}
@@ -1664,6 +1665,70 @@ function chapterLosses(list){const map={};list.forEach(m=>(m.mistakes||[]).forEa
   return Object.values(map).map(e=>Object.assign(e,{n:e.mocks.size})).sort((a,b)=>b.lost-a.lost)}
 function repeatedMistakes(list){const map={};list.forEach(m=>(m.mistakes||[]).forEach(x=>{if(!x.cid||x.cat==="unclassified")return;const k=x.cid+"|"+x.cat,e=map[k]||(map[k]={cid:x.cid,cat:x.cat,paper:m.paper,mocks:new Set(),lost:0});e.mocks.add(m.id);e.lost+=+x.lost||0}));
   return Object.values(map).filter(e=>e.mocks.size>=2).map(e=>Object.assign(e,{n:e.mocks.size})).sort((a,b)=>b.n-a.n||b.lost-a.lost)}
+
+/* ============ PERFORMANCE ANALYTICS & FORECAST ============
+   Progress in the past is rebuilt from each chapter's revision history (recorded since data version 2).
+   The forecast projects the readiness parts to each paper's exam date; it never predicts marks or ranks. */
+const PACE_DAYS=28;
+function flagsAt(cid,d){const c=S.ch[cid]||{};if(!c.r&&!c.q)return {};const hist=Array.isArray(c.hist)?c.hist:[];let idx=-1,q=false;
+  const curIdx=ORDERED.reduce((m,st,j)=>c[st]?j:m,-1);
+  if(!hist.length){if(!c.last||c.last<=d){idx=curIdx;q=!!c.q}}
+  else hist.forEach(h=>{if(h.d>d)return;const i=ORDERED.indexOf(h.s);if(i>idx)idx=i;if(h.s==="q")q=true;if(h.s==="legacy"){idx=Math.max(idx,curIdx);if(c.q)q=true}});
+  const o={};ORDERED.forEach((st,j)=>{o[st]=j<=idx&&!!c[st]});o.q=q&&!!c.q;return o}
+function compsAt(pid,d){let W=0,cov=0,dep=0,prac=0;CH[pid].forEach(r=>{const w=PRI_W[r[1]]||1,f=flagsAt(r[3],d);W+=w;if(f.r){cov+=w;dep+=w*(f.r3?1:f.r2?.7:f.r1?.4:0)}if(f.q)prac+=w});
+  return {coverage:W?cov/W:0,depth:W?dep/W:0,practice:W?prac/W:0}}
+function historyThin(pid){const since=iso(addDays(new Date(),-PACE_DAYS));let ev=0,old=0;CH[pid].forEach(r=>{(((S.ch[r[3]]||{}).hist)||[]).forEach(h=>{if(h.s==="legacy")old++;else if(h.d>=since)ev++})});return {events:ev,legacy:old}}
+function linSlope(ys){const n=ys.length;if(n<2)return 0;const mx=(n-1)/2,my=ys.reduce((a,b)=>a+b,0)/n;let num=0,den=0;ys.forEach((y,i)=>{num+=(i-mx)*(y-my);den+=(i-mx)*(i-mx)});return den?num/den:0}
+function mockTrend(pid){const ms=mocksFor(pid).slice(-5),pc=ms.map(pctOf);return {n:ms.length,slope:linSlope(pc),avg3:pc.length?pc.slice(-3).reduce((a,b)=>a+b,0)/Math.min(3,pc.length):null}}
+const FC_MOCK_EVERY=14,FC_DAMP=.5;
+function forecast(pid){const R=paperReadiness(pid),t=parse(todayISO()),ex=examDates()[pid],days=ex?Math.max(0,diffDays(t,parse(ex))):0,tp=+S.settings.targetPct||75,i=R.info;
+  const now=compsAt(pid,todayISO()),past=compsAt(pid,iso(addDays(t,-PACE_DAYS))),rate={coverage:Math.max(0,(now.coverage-past.coverage)/PACE_DAYS),depth:Math.max(0,(now.depth-past.depth)/PACE_DAYS),practice:Math.max(0,(now.practice-past.practice)/PACE_DAYS)};
+  const MT=mockTrend(pid),futMocks=days/FC_MOCK_EVERY;let mockProj=null;
+  if(MT.n>=2)mockProj=Math.max(0,Math.min(100,MT.avg3+MT.slope*futMocks*FC_DAMP));else if(MT.n===1)mockProj=MT.avg3;
+  const weakRaw=R.comp.coverage>0?R.comp.weak/R.comp.coverage:1;
+  const score=c=>{let v=READY_PARTS.reduce((a,[k,,w])=>a+c[k]*w,0);if(mockProj==null)v=Math.min(v,NO_MOCK_CAP);return Math.round(v)};
+  const covP=Math.min(1,R.comp.coverage+rate.coverage*days),depP=Math.min(1,i.depth+rate.depth*days);
+  const pace={coverage:covP,revision:.7*depP+.3*i.freshness,practice:Math.min(1,R.comp.practice+rate.practice*days),mocks:mockProj==null?0:Math.min(1,mockProj/tp),weak:weakRaw*covP,consistency:R.comp.consistency};
+  const plan={coverage:1,revision:1,practice:1,mocks:pace.mocks,weak:weakRaw,consistency:1};
+  const remaining=1-R.comp.coverage,finishDays=remaining<=0?0:rate.coverage>0?Math.ceil(remaining/rate.coverage):null;
+  return {pid,now:R.score,pace:score(pace),plan:score(plan),paceParts:pace,days,rate,mockProj,MT,finishDays,thin:historyThin(pid),R}}
+function chapterReadiness(cid){const c=S.ch[cid]||{},t=parse(todayISO()),rd=+S.settings.revDays||21,m=CHMAP[cid];
+  const read=c.r?1:0,depth=c.r3?1:c.r2?.7:c.r1?.4:0,fresh=c.r&&c.last&&diffDays(parse(c.last),t)<=rd?1:0,q=c.q?1:0,conf=c.conf?c.conf/5:(c.r?.6:0);
+  const lost=mocksFor(m.p).slice(-5).reduce((a,mk)=>a+(mk.mistakes||[]).filter(x=>x.cid===cid).reduce((s2,x)=>s2+(+x.lost||0),0),0),tt=J.filter(e=>e.cid===cid&&!e.mastered).length;
+  const issues=Math.min(1,lost/10+tt*.25);
+  const parts={read,revision:.7*depth+.3*fresh,questions:q,confidence:conf,clean:(1-issues)*read};
+  const score=Math.round(parts.read*30+parts.revision*25+parts.questions*15+parts.confidence*10+parts.clean*20);return {cid,score,parts,lost,tt,row:m.r}}
+function revisionConsistency(){const t=parse(todayISO()),since=iso(addDays(t,-(PACE_DAYS-1))),days=new Set();
+  J.forEach(e=>(e.reviews||[]).forEach(r=>{if(r.d>=since)days.add(r.d)}));(S.recallLog||[]).forEach(l=>{if(l.d>=since)days.add(l.d)});
+  for(const k in S.ch)((S.ch[k].hist)||[]).forEach(h=>{if(h.d>=since&&/^(r1|r2|r3|rev)$/.test(h.s))days.add(h.d)});
+  Object.keys(S.plan||{}).forEach(d=>{if(d>=since&&(S.plan[d].tasks||[]).some(x=>x.kind==="Revise"&&x.status==="done"))days.add(d)});
+  let read=0,fresh=0;const rd=+S.settings.revDays||21;activePapers().forEach(p=>CH[p.id].forEach(r=>{const c=S.ch[r[3]]||{};if(c.r){read++;if(c.last&&diffDays(parse(c.last),t)<=rd)fresh++}}));
+  return {days:days.size,of:PACE_DAYS,freshness:read?fresh/read:null,read}}
+function practiceAccuracy(){const since=iso(addDays(new Date(),-(PACE_DAYS-1)));let s2=0,n=0;(S.recallLog||[]).forEach(l=>{if(l.d>=since){s2+=l.right+.5*l.partial;n+=l.n}});
+  const s60=iso(addDays(new Date(),-60)),apps=J.flatMap(e=>(e.apps||[]).filter(a=>a.d>=s60));
+  return {recall:n?s2/n:null,recallN:n,solved:apps.length?apps.filter(a=>a.ok).length/apps.length:null,solvedN:apps.length}}
+function lossConcentration(){const recent=mocksIn("all").slice(-5),ch=chapterLosses(recent),tot=recent.reduce((a,m)=>a+(m.mistakes||[]).reduce((b,x)=>b+(+x.lost||0),0),0),top=ch.slice(0,3);
+  return {total:tot,top,share:tot?top.reduce((a,e)=>a+e.lost,0)/tot:null}}
+function insights(){const ps=activePapers(),F=ps.map(p=>forecast(p.id)),out=[],t=parse(todayISO()),plan=buildPlan();
+  const att=F.map(f=>{const reasons=[];const e=plan.valid&&t>=plan.start?expectedPaper(f.pid,plan):null,a=paperProgress(f.pid);
+      if(e!=null&&e-a>=.1)reasons.push(`${Math.round((e-a)*100)}% behind plan`);if(f.MT.n&&f.MT.avg3<50)reasons.push(`recent mocks average ${Math.round(f.MT.avg3)}%`);
+      if(f.MT.n>=3&&f.MT.slope<=-3)reasons.push(`mock scores falling ${Math.abs(f.MT.slope).toFixed(1)} points per mock`);if(f.days&&f.finishDays==null&&f.R.comp.coverage<1&&f.R.comp.coverage>0)reasons.push("no new chapters in the last 4 weeks");
+      return {f,reasons,score:reasons.length*20+(100-f.pace)}}).filter(x=>x.reasons.length).sort((a,b)=>b.score-a.score);
+  out.push({k:"attention",title:"Needs attention now",items:att.slice(0,3).map(x=>({paper:x.f.pid,text:`${paperOf(x.f.pid).short}: ${x.reasons.join("; ")}`,why:`Readiness ${x.f.now} now, about ${x.f.pace} at the exam at your recent pace.`,go:"syllabus"})),empty:"No paper is behind plan, falling in mocks or stalled."});
+  const chL=chapterLosses(mocksIn("all")).filter(e=>e.n>=2).slice(0,4);
+  out.push({k:"chapters",title:"Chapters repeatedly costing marks",items:chL.map(e=>{const top=Object.entries(e.cats).sort((a,b)=>b[1]-a[1])[0];return {paper:e.paper,text:`${chRow(e.cid)[0]}: ${e.lost} marks lost across ${e.n} mocks`,why:`Mostly ${(CAT[top[0]]||CAT.unclassified).label.toLowerCase()}.`,go:"mocks"}}),empty:"No chapter has lost marks in two or more mocks yet. Log mistakes on your mocks to see this."});
+  const rep=repeatedMistakes(mocksIn("all")).slice(0,3),LT=lossTotals(mocksIn("all").slice(-5)),topCat=Object.entries(LT.byCat).filter(([k])=>k!=="unclassified").sort((a,b)=>b[1]-a[1])[0];
+  out.push({k:"mistakes",title:"Recurring mistakes",items:rep.map(r=>({paper:r.paper,text:`${CAT[r.cat].label} in ${chRow(r.cid)[0]} (${r.n} mocks)`,why:`${r.lost} marks so far.`,go:"journal"})).concat(topCat?[{paper:null,text:`Biggest mistake type in recent mocks: ${CAT[topCat[0]].label.toLowerCase()}`,why:`${topCat[1]} marks across the last ${Math.min(5,mocksIn("all").length)} mocks.`,go:"mocks"}]:[]),empty:"No mistake type has repeated yet."});
+  const imp=F.filter(f=>f.MT.n>=3&&f.MT.slope>=2).sort((a,b)=>b.MT.slope-a.MT.slope).map(f=>({paper:f.pid,text:`${paperOf(f.pid).short}: up ${f.MT.slope.toFixed(1)} points per mock`,why:`Last three average ${Math.round(f.MT.avg3)}%.`,go:"mocks"}))
+    .concat(F.filter(f=>f.rate.coverage>0).sort((a,b)=>b.rate.coverage-a.rate.coverage).slice(0,2).map(f=>({paper:f.pid,text:`${paperOf(f.pid).short}: coverage up ${Math.round(f.rate.coverage*PACE_DAYS*100)}% in the last 4 weeks`,why:"Chapters read, weighted by priority.",go:"syllabus"})));
+  out.push({k:"improving",title:"Improving",items:imp.slice(0,4),empty:"Nothing is trending up yet. Three or more mocks of a paper, or new chapters read, will show here."});
+  const rec=ps.map(p=>{const m=mocksFor(p.id).pop();return m?{p:p.id,m,r:recoverable(m)}:null}).filter(x=>x&&x.r.rec>0).sort((a,b)=>b.r.rec-a.r.rec);
+  out.push({k:"recover",title:"Where marks can be recovered",items:rec.slice(0,3).map(x=>({paper:x.p,text:`${paperOf(x.p).short}: about +${x.r.rec} on the latest mock (${x.m.score} → ${x.r.projected})`,why:x.r.buckets.easy.rec>0?`${x.r.buckets.easy.lost} marks lost to calculation, misreading and presentation are the quickest to win back.`:x.r.buckets.practice.rec>=x.r.buckets.concept.rec?`Most of it needs practice: ${x.r.buckets.practice.lost} marks from recall, formulas, provisions, timing or unattempted questions.`:`Most of it needs conceptual work: ${x.r.buckets.concept.lost} marks from conceptual errors.`,go:"mocks"})),empty:"Log mistakes on your mocks to see recoverable marks."});
+  const pace=F.filter(f=>f.R.comp.coverage<1&&f.days).map(f=>{const need=Math.max(1,f.days-Math.min(45,Math.max(21,Math.round(f.days*.12))));
+      return f.finishDays==null?{paper:f.pid,text:`${paperOf(f.pid).short}: no new chapters in the last 4 weeks`,why:`${Math.round((1-f.R.comp.coverage)*100)}% of the syllabus is still unread, with ${f.days} days to the paper.`,bad:true,go:"syllabus"}
+        :{paper:f.pid,text:`${paperOf(f.pid).short}: first reading done in about ${f.finishDays} days at your recent pace`,why:f.finishDays<=need?`That leaves time for revision before the final ${f.days-need} days.`:`It needs to finish within ${need} days to leave time for revision, so about ${Math.round((f.finishDays/need-1)*100)}% faster.`,bad:f.finishDays>need,go:"plan"}}).sort((a,b)=>(b.bad?1:0)-(a.bad?1:0));
+  out.push({k:"pace",title:"Is the pace enough?",items:pace.slice(0,4),empty:"All papers are fully read. Keep revising and writing mocks."});
+  return {sections:out,F}}
 
 /* ============ VIEWS ============ */
 V.today=()=>{
@@ -1863,6 +1928,68 @@ V.mocks=()=>{
       <td class="c num small" style="color:${ch==null?"inherit":ch>=0?"var(--good)":"var(--bad)"}">${ch==null?"–":(ch>=0?"+":"")+f1(ch)}</td><td class="c small">${esc(m.diff||"–")}</td><td class="c num small">${m.timeMins!=null&&m.timeMins!==""?fmtMins(+m.timeMins):"–"}</td>
       <td class="c num small">${(m.mistakes||[]).length?`${m.mistakes.length} · ${f1(L.mist)} m`:"–"}</td><td class="small">${esc(m.src||"")}</td>
       <td style="white-space:nowrap"><button class="ghost" data-act="mkmist" data-id="${m.id}">${mkOpen===m.id?"Close":"Mistakes"}</button><button class="ghost" data-act="editmock" data-id="${m.id}">Edit</button><button class="ghost" data-act="delmock" data-id="${m.id}" aria-label="Delete mock">×</button></td></tr>${mkOpen===m.id?mistakePanel(m):""}`}).join("")}</table></div>`:""}`;
+};
+let anPaper=null, anAll=false;
+V.analytics=()=>{
+  const ps=activePapers(),IN=insights(),F=IN.F,tp=+S.settings.targetPct||75;if(!anPaper||!ps.some(p=>p.id===anPaper))anPaper=ps[0].id;
+  const avg=k=>F.length?Math.round(F.reduce((a,f)=>a+f[k],0)/F.length):0,allM=mocksIn("all"),last3=allM.slice(-3),mAvg=last3.length?last3.reduce((a,m)=>a+pctOf(m),0)/last3.length:null;
+  const RC=revisionConsistency(),PA=practiceAccuracy(),LC=lossConcentration(),recT=ps.reduce((a,p)=>{const m=mocksFor(p.id).pop();return a+(m?recoverable(m).rec:0)},0);
+  const trendPs=F.filter(f=>f.MT.n>=2),overallSlope=trendPs.length?trendPs.reduce((a,f)=>a+f.MT.slope,0)/trendPs.length:0;
+  const tile=(l,v,sub,href)=>`<${href?`a class="tile" href="#${href}"`:'div class="tile"'}><span class="label">${l}</span><b>${v}</b><span class="sub">${sub}</span></${href?"a":"div"}>`;
+  const pc=v=>v==null?"–":Math.round(v*100)+"%";
+  const CR=CH[anPaper].map(r=>chapterReadiness(r[3])),readCR=CR.filter(c=>c.parts.read).sort((a,b)=>a.score-b.score),unread=CR.filter(c=>!c.parts.read).length;
+  const t=new Date(),wk=[7,6,5,4,3,2,1,0].map(w=>{const a=addDays(t,-7*w-6),b=addDays(t,-7*w);let h=0,tg=0,rv=0;for(let d=new Date(a);d<=b;d=addDays(d,1)){const k=iso(d);h+=hoursOn(k);tg+=dayTarget(d)}
+    const A=iso(a),B=iso(b);J.forEach(e=>(e.reviews||[]).forEach(r=>{if(r.d>=A&&r.d<=B)rv++}));(S.recallLog||[]).forEach(l=>{if(l.d>=A&&l.d<=B)rv+=l.n});return {b,h,tg,rv}}),hMax=Math.max(1,...wk.map(w=>Math.max(w.h,w.tg)));
+  const bar=(v,c)=>`<div class="mini" style="flex:1"><i style="width:${Math.max(0,Math.min(100,v))}%;background:${c}"></i></div>`;
+  return `
+  <div class="row between"><h2>Performance analytics</h2><span class="small muted">Measured preparation quality and readiness. No marks or rank predictions.</span></div>
+  <div class="tiles">
+    ${tile("Mock average",mAvg==null?"–":Math.round(mAvg)+"%",trendPs.length?`last 3 · papers trending ${overallSlope>=0?"+":""}${overallSlope.toFixed(1)} per mock`:allM.length?"last 3 mocks":"needs mocks","mocks")}
+    ${tile("Readiness now",avg("now")+"<span class=\"small muted\"> /100</span>","average of papers","today")}
+    ${tile("At exam, recent pace",avg("pace")+"<span class=\"small muted\"> /100</span>",`if you follow the plan: ${avg("plan")}`)}
+    ${tile("Revision consistency",RC.days+"<span class=\"small muted\"> / "+RC.of+"</span>","days with revision activity")}
+    ${tile("Revision freshness",pc(RC.freshness),RC.read?`of ${RC.read} read chapters revised in ${S.settings.revDays} days`:"no chapters read yet","syllabus")}
+    ${tile("Recall accuracy",pc(PA.recall),PA.recallN?`${PA.recallN} recall cards, 4 weeks`:"take a recall test","journal")}
+    ${tile("Solved unaided",pc(PA.solved),PA.solvedN?`${PA.solvedN} questions recorded, 60 days`:"record attempts in Tough topics","journal")}
+    ${tile("Recoverable",recT?"+"+(Math.round(recT*2)/2):"–","marks on latest mocks","mocks")}
+  </div>
+  <div class="card"><div class="label">Insights</div>
+    <div class="grid g2" style="gap:14px 24px">${IN.sections.map(sec=>`<div class="grid" style="gap:6px;align-content:start"><b class="small">${sec.title}</b>
+      ${sec.items.length?sec.items.map(x=>`<div class="small" style="display:grid;gap:2px"><span>${x.paper?`<span class="swatch" style="background:${col(x.paper)}"></span> `:""}<span class="${x.bad?"sev2":""}">${esc(x.text)}</span></span><span class="muted">${esc(x.why)} <a href="#${x.go}" style="color:var(--accent)">Open</a></span></div>`).join(""):`<span class="small muted">${esc(sec.empty)}</span>`}</div>`).join("")}</div></div>
+  <div class="card"><div class="row between"><div class="label">Readiness forecast at each exam</div><span class="small muted">0–100 preparation measure, not marks</span></div>
+    <div class="tablewrap"><table><tr><th>Paper</th><th class="c">Days left</th><th>Now</th><th>At recent pace</th><th>If you follow the plan</th></tr>
+    ${F.map(f=>`<tr><td><span class="row" style="gap:6px"><span class="swatch" style="background:${col(f.pid)}"></span><b>${paperOf(f.pid).short}</b></span></td><td class="c num">${f.days}</td>
+      <td><div class="row" style="gap:8px;flex-wrap:nowrap"><b class="num">${f.now}</b>${bar(f.now,"var(--h2)")}</div></td>
+      <td><div class="row" style="gap:8px;flex-wrap:nowrap"><b class="num">${f.pace}</b>${bar(f.pace,col(f.pid))}</div>${f.thin.events===0&&f.R.comp.coverage>0?'<span class="small sev2">no recent history, so pace is flat</span>':""}</td>
+      <td><div class="row" style="gap:8px;flex-wrap:nowrap"><b class="num">${f.plan}</b>${bar(f.plan,"var(--accent)")}</div>${f.mockProj==null?`<span class="small muted">capped at ${NO_MOCK_CAP} until a mock</span>`:""}</td></tr>`).join("")}
+    <tr><td><b>Average</b></td><td></td><td class="num"><b>${avg("now")}</b></td><td class="num"><b>${avg("pace")}</b></td><td class="num"><b>${avg("plan")}</b></td></tr></table></div>
+    <details class="small"><summary class="muted" style="cursor:pointer">How the forecast works</summary><div class="prose" style="margin-top:8px;max-width:none">
+      <p>The forecast uses the same six parts as readiness and projects each one to the paper's exam date:</p>
+      <ul><li><b>Coverage, revision depth and question practice</b> continue at your pace over the last ${PACE_DAYS} days, rebuilt from your chapter revision history.</li>
+      <li><b>Mocks</b>: your last-three average plus half your recent improvement per mock, assuming one mock every ${FC_MOCK_EVERY} days. Without a mock the score stops at ${NO_MOCK_CAP}.</li>
+      <li><b>Weak-topic load</b> keeps its current rate as coverage grows; <b>consistency</b> and <b>revision freshness</b> stay as they are now.</li>
+      <li><b>If you follow the plan</b>: full coverage, all three revisions, questions practised and target hours met, with mocks still at your recent level.</li></ul>
+      <div class="tablewrap"><table><tr><th>Paper</th><th class="c">Coverage / 4 wks</th><th class="c">Revision depth / 4 wks</th><th class="c">Questions / 4 wks</th><th class="c">Mock trend</th><th class="c">Mock at exam</th></tr>
+      ${F.map(f=>`<tr><td>${paperOf(f.pid).short}</td><td class="c num">+${Math.round(f.rate.coverage*PACE_DAYS*100)}%</td><td class="c num">+${Math.round(f.rate.depth*PACE_DAYS*100)}%</td><td class="c num">+${Math.round(f.rate.practice*PACE_DAYS*100)}%</td><td class="c num">${f.MT.n>=2?(f.MT.slope>=0?"+":"")+f.MT.slope.toFixed(1)+"/mock":"–"}</td><td class="c num">${f.mockProj==null?"–":Math.round(f.mockProj)+"%"}</td></tr>`).join("")}</table></div>
+      <p class="muted">History before the data-version-2 upgrade is treated as already done, so early forecasts can look flat. They sharpen as you tick chapters and write mocks.</p></div></details></div>
+  <div class="tablewrap"><table><tr><th>Paper</th><th class="c">Readiness</th><th class="c">Coverage</th><th class="c">Revision</th><th class="c">Questions</th><th class="c">Mocks (last 3)</th><th class="c">Trend</th><th class="c">Main loss</th><th class="c">Recoverable</th></tr>
+    ${F.map(f=>{const lt=lossTotals(mocksFor(f.pid).slice(-5)),top=Object.entries(lt.byCat).filter(([k])=>k!=="unclassified").sort((a,b)=>b[1]-a[1])[0],m=mocksFor(f.pid).pop();
+      return `<tr><td><span class="row" style="gap:6px"><span class="swatch" style="background:${col(f.pid)}"></span>${paperOf(f.pid).short}</span></td><td class="c num"><b>${f.now}</b></td><td class="c num">${pc(f.R.comp.coverage)}</td><td class="c num">${pc(f.R.comp.revision)}</td><td class="c num">${pc(f.R.comp.practice)}</td>
+        <td class="c num">${f.MT.avg3==null?"–":Math.round(f.MT.avg3)+"%"}</td><td class="c num" style="color:${f.MT.n<2?"inherit":f.MT.slope>=0?"var(--good)":"var(--bad)"}">${f.MT.n<2?"–":(f.MT.slope>=0?"+":"")+f.MT.slope.toFixed(1)}</td>
+        <td class="c small">${top?esc(CAT[top[0]].label):"–"}</td><td class="c num">${m?"+"+recoverable(m).rec:"–"}</td></tr>`}).join("")}</table></div>
+  <div class="grid g2">
+    <div class="card"><div class="row between"><div class="label">Chapter readiness</div><div class="pills">${ps.map(p=>`<button class="${anPaper===p.id?"on":""}" data-act="anp" data-p="${p.id}">${p.short}</button>`).join("")}</div></div>
+      ${readCR.length?`<div class="grid" style="gap:6px">${(anAll?readCR:readCR.slice(0,10)).map(c=>`<div class="lossrow"><span>${esc(c.row[0].length>60?c.row[0].slice(0,58)+"…":c.row[0])} <span class="muted small">${[c.lost?c.lost+" marks lost":"",c.tt?c.tt+" open topic"+(c.tt>1?"s":""):"",!c.parts.questions?"no questions":"",c.parts.revision<.5?"needs revision":""].filter(Boolean).join(" · ")}</span></span><span class="num">${c.score}</span><div class="mini"><i style="width:${c.score}%;background:${c.score>=70?"var(--good)":c.score>=50?"var(--accent)":"var(--warn)"}"></i></div></div>`).join("")}</div>
+        ${readCR.length>10?`<button class="ghost" data-act="anall">${anAll?"Show weakest 10":"Show all "+readCR.length}</button>`:""}`:`<p class="small muted" style="margin:0">No ${paperOf(anPaper).short} chapters read yet.</p>`}
+      <p class="small muted" style="margin:0">Weakest read chapters first${unread?`; ${unread} not read yet`:""}. Score: read 30, revision 25, questions 15, confidence 10, and 20 for a clean record (no recent mock losses or open tough topics).</p></div>
+    <div class="card"><div class="label">Where losses concentrate</div>
+      ${LC.total?`<p class="small" style="margin:0"><b>${Math.round(LC.share*100)}%</b> of marks lost in your last ${Math.min(5,allM.length)} mocks come from ${LC.top.length} chapter${LC.top.length>1?"s":""}${LC.share>=.5?", so targeted revision there pays off fastest":""}.</p>
+        ${lossBars(LC.top.map(e=>[chRow(e.cid)[0],e.lost]),Math.max(...LC.top.map(e=>e.lost)),v=>v+" m")}`:`<p class="small muted" style="margin:0">Log mistakes with chapters on your mocks to see where losses concentrate.</p>`}
+      <span class="label">Study and revision, last 8 weeks</span>
+      <div class="grid" style="grid-template-columns:repeat(8,1fr);gap:6px;align-items:end;height:110px">${wk.map((w,i)=>`<div class="grid" style="gap:3px;align-content:end;height:100%" title="${fmtShort(w.b)}: ${w.h.toFixed(1)} of ${w.tg} h, ${w.rv} reviews"><div style="position:relative;height:${Math.max(2,w.h/hMax*80)}px;background:${w.h>=w.tg?"var(--h4)":"var(--h2)"};border-radius:3px"></div><span class="small muted num" style="text-align:center;font-size:.65rem">${w.rv}</span></div>`).join("")}</div>
+      <p class="small muted" style="margin:0">Bars: weekly hours (dark when the week's target was met). Numbers: reviews and recall cards that week.</p></div>
+  </div>
+  <div class="card"><div class="label">Mock trend, all papers</div>${mockChart(allM,ps,tp)}</div>`;
 };
 V.hours=()=>{
   const weeks=18, t=new Date(), end=addDays(t,6-((t.getDay()+6)%7)), start=addDays(end,-weeks*7+1);
@@ -2251,6 +2378,8 @@ document.addEventListener("click",e=>{
     if(a==="delmock"){S.mocks=S.mocks.filter(m=>m.id!==b.dataset.id);if(mockEdit===b.dataset.id)mockEdit=null;save();render();return}
     if(a==="editmock"){mockEdit=b.dataset.id;render();const f=document.getElementById("mockForm");if(f)f.scrollIntoView({block:"center"});return}
     if(a==="mockcancel"){mockEdit=null;render();return}
+    if(a==="anp"){anPaper=b.dataset.p;anAll=false;render();return}
+    if(a==="anall"){anAll=!anAll;render();return}
     if(a==="mkp"){mkPaper=b.dataset.p;mkOpen=null;render();return}
     if(a==="mkmist"){mkOpen=mkOpen===b.dataset.id?null:b.dataset.id;render();return}
     if(a==="mxdel"){const m=S.mocks.find(z=>z.id===b.dataset.m);if(m){m.mistakes=(m.mistakes||[]).filter(x=>x.id!==b.dataset.x);save();render()}return}
